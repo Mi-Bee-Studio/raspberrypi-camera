@@ -4,7 +4,7 @@
 GOOS ?= linux
 GOARCH ?= arm64
 BINARY := build/rpi-cam
-REMOTE_HOST ?= user@rpi-host
+REMOTE_HOST ?= mickey@192.168.63.162
 REMOTE_DIR ?= ~/rpi-cam
 
 .PHONY: build test deploy clean service-restart service-stop service-logs service-status mediamtx-disable

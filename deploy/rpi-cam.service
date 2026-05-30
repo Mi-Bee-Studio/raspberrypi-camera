@@ -3,12 +3,14 @@ Description=RPi ONVIF Camera Server
 After=network.target
 StartLimitIntervalSec=60
 StartLimitBurst=3
+Conflicts=mediamtx.service
 
 [Service]
 Type=simple
-User=rpi-cam
-WorkingDirectory=/opt/rpi-cam
-ExecStart=/opt/rpi-cam/rpi-cam -config /opt/rpi-cam/config.yaml
+User=mickey
+Environment=LD_LIBRARY_PATH=/home/mickey/rpi-cam/deploy/bin
+WorkingDirectory=/home/mickey/rpi-cam
+ExecStart=/home/mickey/rpi-cam/rpi-cam -config /home/mickey/rpi-cam/config.yaml
 Restart=always
 RestartSec=5
 
