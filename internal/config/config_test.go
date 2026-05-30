@@ -1,0 +1,395 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+// writeTempYAML creates a temporary YAML file with the given content
+// and returns its path. The file is cleaned up at the end of the test.
+func writeTempYAML(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write temp config: %v", err)
+	}
+	return path
+}
+
+func TestLoadDefaults(t *testing.T) {
+	// Minimal YAML — only required top-level keys to test defaults fill in
+	cfgYAML := `
+camera: {}
+rtsp: {}
+onvif: {}
+rtmp: {}
+device: {}
+logging: {}
+`
+	path := writeTempYAML(t, cfgYAML)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	// Camera defaults
+	if cfg.Camera.Device != "/dev/video0" {
+		t.Errorf("Camera.Device = %q, want %q", cfg.Camera.Device, "/dev/video0")
+	}
+	if cfg.Camera.Width != 1280 {
+		t.Errorf("Camera.Width = %d, want %d", cfg.Camera.Width, 1280)
+	}
+	if cfg.Camera.Height != 720 {
+		t.Errorf("Camera.Height = %d, want %d", cfg.Camera.Height, 720)
+	}
+	if cfg.Camera.FPS != 15 {
+		t.Errorf("Camera.FPS = %d, want %d", cfg.Camera.FPS, 15)
+	}
+	if cfg.Camera.Codec != "h264" {
+		t.Errorf("Camera.Codec = %q, want %q", cfg.Camera.Codec, "h264")
+	}
+	if cfg.Camera.Bitrate != 2_000_000 {
+		t.Errorf("Camera.Bitrate = %d, want %d", cfg.Camera.Bitrate, 2_000_000)
+	}
+	if cfg.Camera.Brightness != 0.0 {
+		t.Errorf("Camera.Brightness = %f, want %f", cfg.Camera.Brightness, 0.0)
+	}
+	if cfg.Camera.Contrast != 1.0 {
+		t.Errorf("Camera.Contrast = %f, want %f", cfg.Camera.Contrast, 1.0)
+	}
+	if cfg.Camera.Saturation != 1.0 {
+		t.Errorf("Camera.Saturation = %f, want %f", cfg.Camera.Saturation, 1.0)
+	}
+	if cfg.Camera.Sharpness != 1.0 {
+		t.Errorf("Camera.Sharpness = %f, want %f", cfg.Camera.Sharpness, 1.0)
+	}
+
+	// RTSP defaults
+	if cfg.RTSP.Port != 8554 {
+		t.Errorf("RTSP.Port = %d, want %d", cfg.RTSP.Port, 8554)
+	}
+	if cfg.RTSP.Username != "" {
+		t.Errorf("RTSP.Username = %q, want empty", cfg.RTSP.Username)
+	}
+	if cfg.RTSP.Password != "" {
+		t.Errorf("RTSP.Password = %q, want empty", cfg.RTSP.Password)
+	}
+
+	// ONVIF defaults
+	if cfg.ONVIF.Port != 8080 {
+		t.Errorf("ONVIF.Port = %d, want %d", cfg.ONVIF.Port, 8080)
+	}
+	if cfg.ONVIF.Username != "admin" {
+		t.Errorf("ONVIF.Username = %q, want %q", cfg.ONVIF.Username, "admin")
+	}
+	if cfg.ONVIF.Password != "" {
+		t.Errorf("ONVIF.Password = %q, want empty", cfg.ONVIF.Password)
+	}
+
+	// RTMP defaults
+	if cfg.RTMP.Enabled != false {
+		t.Errorf("RTMP.Enabled = %v, want false", cfg.RTMP.Enabled)
+	}
+	if cfg.RTMP.URL != "rtmp://push-server/app/stream" {
+		t.Errorf("RTMP.URL = %q, want %q", cfg.RTMP.URL, "rtmp://push-server/app/stream")
+	}
+
+	// Device defaults
+	if cfg.Device.Name != "Pi Camera V1" {
+		t.Errorf("Device.Name = %q, want %q", cfg.Device.Name, "Pi Camera V1")
+	}
+	if cfg.Device.Manufacturer != "Raspberry Pi" {
+		t.Errorf("Device.Manufacturer = %q, want %q", cfg.Device.Manufacturer, "Raspberry Pi")
+	}
+	if cfg.Device.Model != "OV5647" {
+		t.Errorf("Device.Model = %q, want %q", cfg.Device.Model, "OV5647")
+	}
+	if cfg.Device.Firmware != "1.0.0" {
+		t.Errorf("Device.Firmware = %q, want %q", cfg.Device.Firmware, "1.0.0")
+	}
+	if cfg.Device.HardwareID != "OV5647" {
+		t.Errorf("Device.HardwareID = %q, want %q", cfg.Device.HardwareID, "OV5647")
+	}
+	if cfg.Device.SerialNumber != "" {
+		t.Errorf("Device.SerialNumber = %q, want empty", cfg.Device.SerialNumber)
+	}
+
+	// Logging defaults
+	if cfg.Logging.Level != "info" {
+		t.Errorf("Logging.Level = %q, want %q", cfg.Logging.Level, "info")
+	}
+}
+
+func TestLoadFromFile(t *testing.T) {
+	cfgYAML := `
+camera:
+  device: /dev/video1
+  width: 640
+  height: 480
+  fps: 30
+  codec: h265
+  bitrate: 1000000
+  brightness: -0.5
+  contrast: 2.0
+  saturation: 1.5
+  sharpness: 3.0
+rtsp:
+  port: 8555
+  username: "testuser"
+  password: "testpass"
+onvif:
+  port: 8081
+  username: "onvifuser"
+  password: "onvifpass"
+rtmp:
+  enabled: true
+  url: "rtmp://example.com/live/stream"
+device:
+  name: "Test Camera"
+  manufacturer: "TestCorp"
+  model: "TC-1000"
+  firmware: "2.0.0"
+  hardware_id: "TC1000"
+  serial_number: "SN-001"
+logging:
+  level: "debug"
+`
+	path := writeTempYAML(t, cfgYAML)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	// Camera
+	if cfg.Camera.Device != "/dev/video1" {
+		t.Errorf("Camera.Device = %q", cfg.Camera.Device)
+	}
+	if cfg.Camera.Width != 640 {
+		t.Errorf("Camera.Width = %d", cfg.Camera.Width)
+	}
+	if cfg.Camera.Height != 480 {
+		t.Errorf("Camera.Height = %d", cfg.Camera.Height)
+	}
+	if cfg.Camera.FPS != 30 {
+		t.Errorf("Camera.FPS = %d", cfg.Camera.FPS)
+	}
+	if cfg.Camera.Codec != "h265" {
+		t.Errorf("Camera.Codec = %q", cfg.Camera.Codec)
+	}
+	if cfg.Camera.Bitrate != 1_000_000 {
+		t.Errorf("Camera.Bitrate = %d", cfg.Camera.Bitrate)
+	}
+	if cfg.Camera.Brightness != -0.5 {
+		t.Errorf("Camera.Brightness = %f", cfg.Camera.Brightness)
+	}
+	if cfg.Camera.Contrast != 2.0 {
+		t.Errorf("Camera.Contrast = %f", cfg.Camera.Contrast)
+	}
+	if cfg.Camera.Saturation != 1.5 {
+		t.Errorf("Camera.Saturation = %f", cfg.Camera.Saturation)
+	}
+	if cfg.Camera.Sharpness != 3.0 {
+		t.Errorf("Camera.Sharpness = %f", cfg.Camera.Sharpness)
+	}
+
+	// RTSP
+	if cfg.RTSP.Port != 8555 {
+		t.Errorf("RTSP.Port = %d", cfg.RTSP.Port)
+	}
+	if cfg.RTSP.Username != "testuser" {
+		t.Errorf("RTSP.Username = %q", cfg.RTSP.Username)
+	}
+	if cfg.RTSP.Password != "testpass" {
+		t.Errorf("RTSP.Password = %q", cfg.RTSP.Password)
+	}
+
+	// ONVIF
+	if cfg.ONVIF.Port != 8081 {
+		t.Errorf("ONVIF.Port = %d", cfg.ONVIF.Port)
+	}
+	if cfg.ONVIF.Username != "onvifuser" {
+		t.Errorf("ONVIF.Username = %q", cfg.ONVIF.Username)
+	}
+	if cfg.ONVIF.Password != "onvifpass" {
+		t.Errorf("ONVIF.Password = %q", cfg.ONVIF.Password)
+	}
+
+	// RTMP
+	if !cfg.RTMP.Enabled {
+		t.Errorf("RTMP.Enabled = false, want true")
+	}
+	if cfg.RTMP.URL != "rtmp://example.com/live/stream" {
+		t.Errorf("RTMP.URL = %q", cfg.RTMP.URL)
+	}
+
+	// Device
+	if cfg.Device.Name != "Test Camera" {
+		t.Errorf("Device.Name = %q", cfg.Device.Name)
+	}
+	if cfg.Device.Manufacturer != "TestCorp" {
+		t.Errorf("Device.Manufacturer = %q", cfg.Device.Manufacturer)
+	}
+	if cfg.Device.Model != "TC-1000" {
+		t.Errorf("Device.Model = %q", cfg.Device.Model)
+	}
+	if cfg.Device.Firmware != "2.0.0" {
+		t.Errorf("Device.Firmware = %q", cfg.Device.Firmware)
+	}
+	if cfg.Device.HardwareID != "TC1000" {
+		t.Errorf("Device.HardwareID = %q", cfg.Device.HardwareID)
+	}
+	if cfg.Device.SerialNumber != "SN-001" {
+		t.Errorf("Device.SerialNumber = %q", cfg.Device.SerialNumber)
+	}
+
+	// Logging
+	if cfg.Logging.Level != "debug" {
+		t.Errorf("Logging.Level = %q", cfg.Logging.Level)
+	}
+}
+
+func TestEnvOverride(t *testing.T) {
+	// Set env vars before loading
+	t.Setenv("RPICAM_CAMERA_WIDTH", "640")
+	t.Setenv("RPICAM_CAMERA_HEIGHT", "480")
+	t.Setenv("RPICAM_CAMERA_FPS", "30")
+	t.Setenv("RPICAM_CAMERA_BRIGHTNESS", "0.5")
+	t.Setenv("RPICAM_CAMERA_CONTRAST", "2.5")
+	t.Setenv("RPICAM_CAMERA_SATURATION", "1.2")
+	t.Setenv("RPICAM_CAMERA_SHARPNESS", "0.8")
+	t.Setenv("RPICAM_RTSP_PORT", "9554")
+	t.Setenv("RPICAM_RTSP_USERNAME", "envuser")
+	t.Setenv("RPICAM_RTSP_PASSWORD", "envpass")
+	t.Setenv("RPICAM_ONVIF_PORT", "9080")
+	t.Setenv("RPICAM_ONVIF_USERNAME", "envonvif")
+	t.Setenv("RPICAM_ONVIF_PASSWORD", "envonvifpass")
+	t.Setenv("RPICAM_RTMP_ENABLED", "true")
+	t.Setenv("RPICAM_RTMP_URL", "rtmp://env.example.com/stream")
+	t.Setenv("RPICAM_CAMERA_DEVICE", "/dev/videoEnv")
+	t.Setenv("RPICAM_CAMERA_CODEC", "h265")
+	t.Setenv("RPICAM_CAMERA_BITRATE", "5000000")
+	t.Setenv("RPICAM_DEVICE_NAME", "Env Camera")
+	t.Setenv("RPICAM_DEVICE_MANUFACTURER", "EnvCorp")
+	t.Setenv("RPICAM_DEVICE_MODEL", "Env-2000")
+	t.Setenv("RPICAM_DEVICE_FIRMWARE", "3.0.0")
+	t.Setenv("RPICAM_DEVICE_HARDWAREID", "ENV2000")
+	t.Setenv("RPICAM_DEVICE_SERIALNUMBER", "ENV-001")
+	t.Setenv("RPICAM_LOGGING_LEVEL", "debug")
+
+	// Load a config with different YAML values to prove env wins
+	cfgYAML := `
+camera:
+  width: 999
+  device: /dev/videoYAML
+rtsp:
+  port: 1111
+onvif:
+  username: "yamluser"
+rtmp:
+  enabled: false
+device:
+  name: "YAML Camera"
+logging:
+  level: "warn"
+`
+	path := writeTempYAML(t, cfgYAML)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	// Env overrides take precedence over YAML
+	if cfg.Camera.Width != 640 {
+		t.Errorf("Camera.Width = %d, want 640 (env override)", cfg.Camera.Width)
+	}
+	if cfg.Camera.Device != "/dev/videoEnv" {
+		t.Errorf("Camera.Device = %q, want /dev/videoEnv (env override)", cfg.Camera.Device)
+	}
+	if cfg.Camera.Height != 480 {
+		t.Errorf("Camera.Height = %d, want 480 (env override)", cfg.Camera.Height)
+	}
+	if cfg.Camera.FPS != 30 {
+		t.Errorf("Camera.FPS = %d, want 30 (env override)", cfg.Camera.FPS)
+	}
+	if cfg.Camera.Codec != "h265" {
+		t.Errorf("Camera.Codec = %q, want h265 (env override)", cfg.Camera.Codec)
+	}
+	if cfg.Camera.Bitrate != 5_000_000 {
+		t.Errorf("Camera.Bitrate = %d, want 5000000 (env override)", cfg.Camera.Bitrate)
+	}
+	if cfg.Camera.Brightness != 0.5 {
+		t.Errorf("Camera.Brightness = %f, want 0.5 (env override)", cfg.Camera.Brightness)
+	}
+	if cfg.Camera.Contrast != 2.5 {
+		t.Errorf("Camera.Contrast = %f, want 2.5 (env override)", cfg.Camera.Contrast)
+	}
+	if cfg.Camera.Saturation != 1.2 {
+		t.Errorf("Camera.Saturation = %f, want 1.2 (env override)", cfg.Camera.Saturation)
+	}
+	if cfg.Camera.Sharpness != 0.8 {
+		t.Errorf("Camera.Sharpness = %f, want 0.8 (env override)", cfg.Camera.Sharpness)
+	}
+	if cfg.RTSP.Port != 9554 {
+		t.Errorf("RTSP.Port = %d, want 9554 (env override)", cfg.RTSP.Port)
+	}
+	if cfg.RTSP.Username != "envuser" {
+		t.Errorf("RTSP.Username = %q, want envuser (env override)", cfg.RTSP.Username)
+	}
+	if cfg.RTSP.Password != "envpass" {
+		t.Errorf("RTSP.Password = %q, want envpass (env override)", cfg.RTSP.Password)
+	}
+	if cfg.ONVIF.Port != 9080 {
+		t.Errorf("ONVIF.Port = %d, want 9080 (env override)", cfg.ONVIF.Port)
+	}
+	if cfg.ONVIF.Username != "envonvif" {
+		t.Errorf("ONVIF.Username = %q, want envonvif (env override)", cfg.ONVIF.Username)
+	}
+	if cfg.ONVIF.Password != "envonvifpass" {
+		t.Errorf("ONVIF.Password = %q, want envonvifpass (env override)", cfg.ONVIF.Password)
+	}
+	if !cfg.RTMP.Enabled {
+		t.Errorf("RTMP.Enabled = false, want true (env override)")
+	}
+	if cfg.RTMP.URL != "rtmp://env.example.com/stream" {
+		t.Errorf("RTMP.URL = %q, want rtmp://env.example.com/stream (env override)", cfg.RTMP.URL)
+	}
+	if cfg.Device.Name != "Env Camera" {
+		t.Errorf("Device.Name = %q, want Env Camera (env override)", cfg.Device.Name)
+	}
+	if cfg.Device.Manufacturer != "EnvCorp" {
+		t.Errorf("Device.Manufacturer = %q, want EnvCorp (env override)", cfg.Device.Manufacturer)
+	}
+	if cfg.Device.Model != "Env-2000" {
+		t.Errorf("Device.Model = %q, want Env-2000 (env override)", cfg.Device.Model)
+	}
+	if cfg.Device.Firmware != "3.0.0" {
+		t.Errorf("Device.Firmware = %q, want 3.0.0 (env override)", cfg.Device.Firmware)
+	}
+	if cfg.Device.HardwareID != "ENV2000" {
+		t.Errorf("Device.HardwareID = %q, want ENV2000 (env override)", cfg.Device.HardwareID)
+	}
+	if cfg.Device.SerialNumber != "ENV-001" {
+		t.Errorf("Device.SerialNumber = %q, want ENV-001 (env override)", cfg.Device.SerialNumber)
+	}
+	if cfg.Logging.Level != "debug" {
+		t.Errorf("Logging.Level = %q, want debug (env override)", cfg.Logging.Level)
+	}
+}
+
+func TestInvalidYAML(t *testing.T) {
+	cfgYAML := `camera: { invalid yaml: `
+	path := writeTempYAML(t, cfgYAML)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for invalid YAML, got nil")
+	}
+}
+
+func TestMissingFile(t *testing.T) {
+	_, err := Load("/nonexistent/path/config.yaml")
+	if err == nil {
+		t.Fatal("expected error for missing file, got nil")
+	}
+}
