@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"golang.org/x/sys/unix"
 	"time"
 )
 
@@ -164,7 +165,18 @@ func (c *RPiCamera) Start(ctx context.Context) error {
 		return fmt.Errorf("create video pipe: %w", err)
 	}
 
-	binDir := filepath.Dir(c.binPath)
+	// Clear close-on-exec flag so FDs survive exec to child process.
+	// mtxrpicam receives FD numbers via env vars (PIPE_CONF_FD, PIPE_VIDEO_FD).
+	for _, fd := range []int{confFds[0], confFds[1], videoFds[0], videoFds[1]} {
+		flags, _ := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
+		unix.FcntlInt(uintptr(fd), unix.F_SETFD, flags&^unix.FD_CLOEXEC)
+	}
+
+	binPath, err := filepath.Abs(c.binPath)
+	if err != nil {
+		return fmt.Errorf("resolve binary path: %w", err)
+	}
+	binDir := filepath.Dir(binPath)
 	env := []string{
 		"PIPE_CONF_FD=" + strconv.Itoa(confFds[0]),
 		"PIPE_VIDEO_FD=" + strconv.Itoa(videoFds[1]),
@@ -173,7 +185,7 @@ func (c *RPiCamera) Start(ctx context.Context) error {
 		"PATH=" + os.Getenv("PATH"),
 	}
 
-	c.cmd = exec.CommandContext(ctx, c.binPath)
+	c.cmd = exec.CommandContext(ctx, binPath)
 	c.cmd.Env = env
 	c.cmd.Dir = binDir
 	c.cmd.Stdout = os.Stdout

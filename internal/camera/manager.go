@@ -26,6 +26,15 @@ var ParamRanges = map[string]Range{
 	"Width":        {Min: 64, Max: 2592, Default: 1280},
 	"Height":       {Min: 64, Max: 1944, Default: 720},
 	"FPS":          {Min: 1, Max: 30, Default: 15},
+	"HFlip":        {Min: 0, Max: 1, Default: 0},
+	"VFlip":        {Min: 0, Max: 1, Default: 0},
+}
+
+// ParamEnums defines allowed string values for enum-type parameters.
+// Keys use ONVIF PascalCase naming convention.
+var ParamEnums = map[string][]string{
+	"AWBMode":      {"auto", "incandescent", "tungsten", "fluorescent", "daylight", "cloudy", "custom"},
+	"ExposureMode": {"normal", "sport", "short", "long", "custom"},
 }
 
 // onvifToCam maps ONVIF PascalCase parameter names to the lowercase names
@@ -40,6 +49,10 @@ var onvifToCam = map[string]string{
 	"Width":        "width",
 	"Height":       "height",
 	"FPS":          "fps",
+	"HFlip":        "hFlip",
+	"VFlip":        "vFlip",
+	"AWBMode":      "awbMode",
+	"ExposureMode": "exposureMode",
 }
 
 // ParamManager manages camera parameter changes with range validation.
@@ -89,6 +102,20 @@ func (pm *ParamManager) Get(name string) (interface{}, error) {
 
 // Validate checks if a value is within valid range without applying it.
 func (pm *ParamManager) Validate(name string, value interface{}) error {
+	// Check string enum parameters first (they are not in ParamRanges)
+	if enums, ok := ParamEnums[name]; ok {
+		s, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("parameter %s requires a string value, got %T", name, value)
+		}
+		for _, e := range enums {
+			if s == e {
+				return nil
+			}
+		}
+		return fmt.Errorf("parameter %s value %q not in allowed values %v", name, s, enums)
+	}
+
 	r, ok := ParamRanges[name]
 	if !ok {
 		return fmt.Errorf("unknown parameter: %s", name)
@@ -109,6 +136,11 @@ func (pm *ParamManager) Validate(name string, value interface{}) error {
 // toFloat64 converts interface{} values to float64 for range comparison.
 func toFloat64(value interface{}) (float64, error) {
 	switch v := value.(type) {
+	case bool:
+		if v {
+			return 1, nil
+		}
+		return 0, nil
 	case float32:
 		return float64(v), nil
 	case float64:

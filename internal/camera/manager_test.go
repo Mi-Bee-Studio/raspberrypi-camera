@@ -192,3 +192,149 @@ func TestConcurrentAccess(t *testing.T) {
 		t.Error("expected brightness to be set")
 	}
 }
+
+func TestSetHFlip(t *testing.T) {
+	mock := newMockCamera()
+	pm := NewParamManager(mock)
+
+	err := pm.Set("HFlip", float64(1))
+	if err != nil {
+		t.Fatalf("Set HFlip failed: %v", err)
+	}
+
+	got := mock.getParam("hFlip")
+	if got != float64(1) {
+		t.Errorf("expected hFlip=1, got %v (%T)", got, got)
+	}
+}
+
+func TestSetVFlipBool(t *testing.T) {
+	mock := newMockCamera()
+	pm := NewParamManager(mock)
+
+	err := pm.Set("VFlip", true)
+	if err != nil {
+		t.Fatalf("Set VFlip failed: %v", err)
+	}
+
+	got := mock.getParam("vFlip")
+	if got != true {
+		t.Errorf("expected vFlip=true, got %v (%T)", got, got)
+	}
+}
+
+func TestSetAWBMode(t *testing.T) {
+	mock := newMockCamera()
+	pm := NewParamManager(mock)
+
+	err := pm.Set("AWBMode", "auto")
+	if err != nil {
+		t.Fatalf("Set AWBMode failed: %v", err)
+	}
+
+	got := mock.getParam("awbMode")
+	if got != "auto" {
+		t.Errorf("expected awbMode=auto, got %v (%T)", got, got)
+	}
+}
+
+func TestSetExposureMode(t *testing.T) {
+	mock := newMockCamera()
+	pm := NewParamManager(mock)
+
+	err := pm.Set("ExposureMode", "sport")
+	if err != nil {
+		t.Fatalf("Set ExposureMode failed: %v", err)
+	}
+
+	got := mock.getParam("exposureMode")
+	if got != "sport" {
+		t.Errorf("expected exposureMode=sport, got %v (%T)", got, got)
+	}
+}
+
+func TestOutOfRangeHFlip(t *testing.T) {
+	mock := newMockCamera()
+	pm := NewParamManager(mock)
+
+	err := pm.Set("HFlip", float64(2))
+	if err == nil {
+		t.Fatal("expected error for out-of-range HFlip")
+	}
+	if got := mock.getParam("hFlip"); got != nil {
+		t.Errorf("camera should not have been called, got %v", got)
+	}
+}
+
+func TestInvalidAWBMode(t *testing.T) {
+	mock := newMockCamera()
+	pm := NewParamManager(mock)
+
+	err := pm.Set("AWBMode", "invalid_mode")
+	if err == nil {
+		t.Fatal("expected error for invalid AWBMode")
+	}
+	if got := mock.getParam("awbMode"); got != nil {
+		t.Errorf("camera should not have been called, got %v", got)
+	}
+}
+
+func TestExposureModeWrongType(t *testing.T) {
+	mock := newMockCamera()
+	pm := NewParamManager(mock)
+
+	err := pm.Set("ExposureMode", float64(1))
+	if err == nil {
+		t.Fatal("expected error for ExposureMode with non-string value")
+	}
+}
+
+func TestValidateHFlip(t *testing.T) {
+	mock := newMockCamera()
+	pm := NewParamManager(mock)
+
+	err := pm.Validate("HFlip", float64(1))
+	if err != nil {
+		t.Fatalf("Validate HFlip failed: %v", err)
+	}
+
+	// Camera should not have been called
+	if got := mock.getParam("hFlip"); got != nil {
+		t.Errorf("Validate should not call camera, got %v", got)
+	}
+}
+
+func TestValidateHFlipBoolType(t *testing.T) {
+	mock := newMockCamera()
+	pm := NewParamManager(mock)
+
+	err := pm.Validate("HFlip", true)
+	if err != nil {
+		t.Fatalf("Validate HFlip(true) failed: %v", err)
+	}
+
+	err = pm.Validate("HFlip", false)
+	if err != nil {
+		t.Fatalf("Validate HFlip(false) failed: %v", err)
+	}
+}
+
+func TestValidateAWBMode(t *testing.T) {
+	mock := newMockCamera()
+	pm := NewParamManager(mock)
+
+	err := pm.Validate("AWBMode", "daylight")
+	if err != nil {
+		t.Fatalf("Validate AWBMode failed: %v", err)
+	}
+}
+
+func TestValidateAWBModeInvalid(t *testing.T) {
+	mock := newMockCamera()
+	pm := NewParamManager(mock)
+
+	err := pm.Validate("AWBMode", "nonsense")
+	if err == nil {
+		t.Fatal("expected error for invalid AWBMode")
+	}
+}
