@@ -29,6 +29,10 @@ logging:       # 日志配置
 
 ```yaml
 camera:
+  # mtxrpicam 二进制文件路径（摄像头捕获子进程）
+  # 此二进制文件及其捆绑的 libcamera 库必须存在于该路径下
+  bin_path: deploy/bin/mtxrpicam
+
   # 摄像头设备路径（V4L2 或 libcamera）
   device: /dev/video0
   
@@ -152,7 +156,8 @@ logging:
 
 | 部分 | 字段 | 默认值 | 类型 | 描述 |
 |------|------|--------|------|------|
-| **camera** | device | `/dev/video0` | string | 摄像头设备路径 |
+| **camera** | bin_path | `"deploy/bin/mtxrpicam"` | string | mtxrpicam 二进制文件路径 |
+| | device | `/dev/video0` | string | 摄像头设备路径 |
 | | width | `1280` | int | 捕获宽度（像素） |
 | | height | `720` | int | 捕获高度（像素） |
 | | fps | `15` | int | 每秒帧数 |
@@ -207,7 +212,8 @@ RPICAM_DEVICE_NAME="Office Camera" ./rpi-cam
 
 | 部分 | 字段 | 环境变量 |
 |------|------|----------|
-| **camera** | device | `RPICAM_CAMERA_DEVICE` |
+| **camera** | bin_path | `RPICAM_CAMERA_BINPATH` |
+| | device | `RPICAM_CAMERA_DEVICE` |
 | | width | `RPICAM_CAMERA_WIDTH` |
 | | height | `RPICAM_CAMERA_HEIGHT` |
 | | fps | `RPICAM_CAMERA_FPS` |
@@ -392,3 +398,4 @@ logging:
 6. **环境变量**：使用环境变量存储像密码这样的敏感数据，避免将它们存储在配置文件中。
 
 7. **验证**：服务将根据硬件约束验证配置值。无效的设置将被记录或设置为默认值。
+8. **摄像头二进制文件**：`bin_path` 必须指向有效的 mtxrpicam 二进制文件。该文件所在目录还必须包含捆绑的 libcamera 共享库（libcamera.so.9.9、libcamera-base.so.9.9）和 IPA 模块。详见部署文档。

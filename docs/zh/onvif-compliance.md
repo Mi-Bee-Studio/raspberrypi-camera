@@ -23,7 +23,7 @@
 #XQ||-----------|-------------|-------|
 #HY|| `GetSystemDateAndTime` | ✅ | 返回 UTC 时间，手动模式（无 NTP 同步） |
 #JS|| `GetDeviceInformation` | ✅ | 制造商、型号、固件、序列号、硬件 ID 来自配置 |
-#SX|| `GetCapabilities` | ✅ | 广告 Media、PTZ、Device 服务 |
+|| `GetCapabilities` | ✅ | 广告 Media、PTZ、Device、Imaging 服务 |
 #QX|| `GetServices` | ✅ | 列出所有 ONVIF 服务及 XAddr 端点 |
 #VP|| `GetScopes` | ✅ | 名称、硬件和类型范围 |
 #JJ|
@@ -41,6 +41,7 @@
 #VK|Device: XAddr: "http://<相机IP>:8080/onvif/device_service"
 #YR|Media: XAddr: "http://<相机IP>:8080/onvif/media_service"  
 #NY|PTZ: XAddr: "http://<相机IP>:8080/onvif/ptz_service"
+Imaging: XAddr: "http://<相机IP>:8080/onvif/device_service"
 #KW|```
 #QB|
 #JY|### Media 服务

@@ -1,6 +1,6 @@
 # rpi-cam 故障排除指南
 
-## English](../troubleshooting.md)
+[English](../troubleshooting.md)
 
 本文档涵盖了 rpi-cam（树莓 Pi ONVIF 相机服务）的常见问题和解决方案。
 
@@ -23,6 +23,8 @@ free -h
 top -bn1 | head -20
 ```
 
+# 检查摄像头编码器是否正常工作（日志中应有 x264）
+journalctl -u rpi-cam --since "1 minute ago" | grep -i "x264\|encoder\|h264"
 ## 相机检测问题
 
 ### 症状
@@ -69,6 +71,70 @@ vcgencmd get_camera
      device: "/dev/video0"  # 或你的相机设备
    ```
 
+## 摄像头编码器问题
+
+### 症状
+- 服务启动但日志显示 "encoder_create(): unable to activate output stream"
+- RTSP 流连接但无视频数据
+- 快照端点返回 503 Service Unavailable
+
+### 诊断
+```bash
+# 检查 mtxrpicam 是否能找到 libcamera
+LD_LIBRARY_PATH=/home/mickey/rpi-cam/deploy/bin ldd ~/rpi-cam/deploy/bin/mtxrpicam
+# 如果显示 "libcamera.so.9.9 => not found"，说明捆绑库缺失
+
+# 检查捆绑的 libcamera 文件是否存在
+ls -la ~/rpi-cam/deploy/bin/libcamera*.so*
+
+# 检查 systemd 服务中的 LD_LIBRARY_PATH
+grep LD_LIBRARY_PATH /etc/systemd/system/rpi-cam.service
+
+# 直接使用 rpicam-vid 测试摄像头
+rpicam-vid -t 1000 --width 1280 --height 720 -o /dev/null
+
+# 检查系统 libcamera 版本（可能与捆绑版本不同）
+dpkg -l | grep libcamera
+```
+
+### 根因
+mtxrpicam 二进制文件动态链接的是 `libcamera.so.9.9`，这与系统安装的 libcamera（Debian 13 提供的是 `libcamera.so.0.7`）不同。捆绑版本必须存在于 `deploy/bin/` 目录中，且 `LD_LIBRARY_PATH` 必须指向该目录。
+
+### 解决方案
+1. **缺少捆绑库**：从 mediamtx-rpicamera 发布版重新部署
+   ```bash
+   # 在工作站上下载并解压
+   gh release download v2.6.0 --repo bluenviron/mediamtx-rpicamera \
+     --pattern "mtxrpicam_64.tar.gz"
+   tar xzf mtxrpicam_64.tar.gz
+   
+   # 复制捆绑库到设备
+   scp mtxrpicam_64/libcamera*.so* <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/deploy/bin/
+   scp mtxrpicam_64/mtxrpicam <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/deploy/bin/
+   
+   # 重启服务
+   sudo systemctl restart rpi-cam
+   ```
+
+2. **LD_LIBRARY_PATH 未设置**：验证 systemd 服务配置
+   ```bash
+   # 应包含：Environment=LD_LIBRARY_PATH=/path/to/deploy/bin
+   systemctl cat rpi-cam
+   
+   # 如果缺失，编辑服务文件
+   sudo systemctl edit rpi-cam --force
+   # 添加：Environment=LD_LIBRARY_PATH=/home/mickey/rpi-cam/deploy/bin
+   sudo systemctl daemon-reload
+   sudo systemctl restart rpi-cam
+   ```
+
+3. **摄像头被其他进程占用**：停止 MediaMTX
+   ```bash
+   sudo systemctl stop mediamtx
+   sudo systemctl disable mediamtx
+   # 验证摄像头已释放
+   lsof /dev/video0
+   ```
 ## RTSP 流媒体问题
 
 ### 症状
@@ -229,6 +295,11 @@ ffmpeg -rtsp_transport tcp -i rtsp://localhost:8554/stream \
 ffmpeg -version
 ```
 
+# 测试快照端点并检查响应
+curl -s -w "\nHTTP 状态: %{http_code}\n" http://localhost:8080/snapshot -o /dev/null
+# HTTP 200 + "image/jpeg" = 正常工作
+# HTTP 503 = 摄像头未提供帧（检查编码器）
+
 ### 解决方案
 1. **缺少 FFmpeg**：安装 FFmpeg
    ```bash
@@ -353,6 +424,20 @@ WARNING: high memory usage detected
 ```
 - 解决方案：降低分辨率、FPS 或比特率
 
+### 编码器创建错误
+```
+camera: mtxrpicam error: encoder_create(): unable to activate output stream
+```
+- 原因：捆绑的 libcamera 共享库缺失或 LD_LIBRARY_PATH 未设置
+- 解决方案：参见「摄像头编码器问题」部分
+
+### 共享库未找到
+```
+error while loading shared libraries: libcamera.so.9.9: cannot open shared object file
+```
+- 原因：LD_LIBRARY_PATH 未包含 deploy/bin/ 目录
+- 解决方案：在 systemd 服务中设置 `Environment=LD_LIBRARY_PATH=<deploy-path>/bin`
+
 ## 系统状态命令
 
 ```bash
@@ -376,6 +461,12 @@ pgrep -f rpi-cam || echo "rpi-cam 未运行"
 echo "冲突进程："
 lsof /dev/video0 2>/dev/null | grep -v rpi-cam || echo "无冲突"
 ```
+
+echo "编码器状态："
+journalctl -u rpi-cam --since "5 minutes ago" | grep -i "x264\|encoder" | tail -3
+
+echo "库解析："
+LD_LIBRARY_PATH=~/rpi-cam/deploy/bin ldd ~/rpi-cam/deploy/bin/mtxrpicam 2>&1 | grep -E "found|libcamera"
 
 ## 联系支持
 
