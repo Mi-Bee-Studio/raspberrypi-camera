@@ -1,17 +1,19 @@
 package onvif
 
 import (
+	"context"
 	"encoding/xml"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/h264"
 )
-
 // ---------------------------------------------------------------------------
 // Unit tests — response builders
 // ---------------------------------------------------------------------------
@@ -104,6 +106,39 @@ func TestSnapshotBufferOverwrites(t *testing.T) {
 // HTTP endpoint tests
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// HTTP endpoint tests — use mock FFmpeg scripts
+// ---------------------------------------------------------------------------
+
+// writeMockFFmpeg creates a shell script that reads H.264 from stdin and
+// writes a minimal JPEG (JFIF header with valid SOI/EOI) to stdout.
+// Returns the script path. Caller should clean up.
+func writeMockFFmpeg(t *testing.T, name string, hang bool) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, name)
+
+	if hang {
+		script := "#!/bin/sh\nexec sleep 30\n"
+		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+			t.Fatalf("failed to write mock %s: %v", name, err)
+		}
+		return path
+	}
+
+	// Write a minimal JPEG file and a shell script that cats it to stdout.
+	jpegPath := filepath.Join(dir, name+".jpg")
+	jpeg := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9}
+	if err := os.WriteFile(jpegPath, jpeg, 0o644); err != nil {
+		t.Fatalf("failed to write mock JPEG: %v", err)
+	}
+	script := "#!/bin/sh\ncat > /dev/null\ncat " + jpegPath + "\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("failed to write mock %s: %v", name, err)
+	}
+	return path
+}
+
 func TestSnapshotNotAvailable(t *testing.T) {
 	buf := NewSnapshotBuffer()
 
@@ -120,19 +155,20 @@ func TestSnapshotNotAvailable(t *testing.T) {
 	}
 }
 
-func TestSnapshotHTTP(t *testing.T) {
+func TestSnapshotHTTPWithMockFFmpeg(t *testing.T) {
 	buf := NewSnapshotBuffer()
 
 	buf.Feed(h264.AccessUnit{
-		NALUs:     []h264.NALU{{Type: 5, Data: []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, IsIDR: true}},
+		NALUs:     []h264.NALU{{Type: 5, Data: []byte("fake-h264-nalu-data"), IsIDR: true}},
 		Timestamp: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
 		KeyFrame:  true,
 	})
 
+	mockFFmpeg := writeMockFFmpeg(t, "mock-ffmpeg", false)
 	req := httptest.NewRequest(http.MethodGet, "/snapshot", nil)
 	w := httptest.NewRecorder()
 
-	handleSnapshotHTTP(w, req, buf)
+	handleSnapshotHTTPWithBin(w, req, buf, mockFFmpeg)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
@@ -141,12 +177,38 @@ func TestSnapshotHTTP(t *testing.T) {
 	if ct != "image/jpeg" {
 		t.Errorf("expected Content-Type image/jpeg, got %q", ct)
 	}
-	if w.Body.Len() == 0 {
-		t.Error("expected non-empty body")
+	body := w.Body.Bytes()
+	if len(body) < 2 {
+		t.Fatal("expected body with at least 2 bytes (JPEG SOI marker)")
+	}
+	if body[0] != 0xFF || body[1] != 0xD8 {
+		t.Errorf("expected JPEG SOI marker (FF D8), got %02X %02X", body[0], body[1])
 	}
 	tsHeader := w.Header().Get("X-Frame-Timestamp")
 	if !strings.Contains(tsHeader, "2024-01-15") {
 		t.Errorf("expected timestamp header to contain date, got %q", tsHeader)
+	}
+}
+
+func TestSnapshotTimeoutWithCancelledContext(t *testing.T) {
+	buf := NewSnapshotBuffer()
+
+	buf.Feed(h264.AccessUnit{
+		NALUs:     []h264.NALU{{Type: 5, Data: []byte("fake-h264-nalu-data"), IsIDR: true}},
+		Timestamp: time.Now(),
+		KeyFrame:  true,
+	})
+
+	// Use a request with an already-cancelled context.
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/snapshot", nil).WithContext(cancelledCtx)
+	w := httptest.NewRecorder()
+
+	handleSnapshotHTTPWithBin(w, req, buf, "nonexistent-binary")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 for cancelled context, got %d", w.Code)
 	}
 }
 
@@ -215,15 +277,16 @@ func TestSnapshotViaServerServeHTTP(t *testing.T) {
 	cfg := &mockConfig{username: "admin", password: "testpass", port: 8080}
 	srv := New(cfg)
 
-	// Manually set up snapshot handler with a pre-fed buffer.
+	// Manually set up snapshot handler with a pre-fed buffer and mock FFmpeg.
 	buf := NewSnapshotBuffer()
 	buf.Feed(h264.AccessUnit{
 		NALUs:     []h264.NALU{{Type: 5, Data: []byte("test-frame-bytes"), IsIDR: true}},
 		Timestamp: time.Now(),
 		KeyFrame:  true,
 	})
+	mockFFmpeg := writeMockFFmpeg(t, "mock-ffmpeg-srv", false)
 	srv.snapshotHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handleSnapshotHTTP(w, r, buf)
+		handleSnapshotHTTPWithBin(w, r, buf, mockFFmpeg)
 	})
 
 	// GET /snapshot should be routed to the snapshot handler, not SOAP.
@@ -310,18 +373,14 @@ func TestSnapshotHandlerFedFromChannel(t *testing.T) {
 	// Wait a bit for the goroutine to consume.
 	<-time.After(50 * time.Millisecond)
 
-	// GET /snapshot through server.
+	// The handler will try real ffmpeg and fail — we expect 503.
+	// This tests the channel-feed + FFmpeg error path.
 	req := httptest.NewRequest(http.MethodGet, "/snapshot", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
-	}
-
-	ct := w.Header().Get("Content-Type")
-	if ct != "image/jpeg" {
-		t.Errorf("expected Content-Type image/jpeg, got %q", ct)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 (no ffmpeg available), got %d", w.Code)
 	}
 }
 

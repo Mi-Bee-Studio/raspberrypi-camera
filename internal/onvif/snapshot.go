@@ -1,10 +1,12 @@
 package onvif
 
 import (
+	"bytes"
 	"context"
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"sync"
 	"time"
 
@@ -111,28 +113,95 @@ func handleGetSnapshotUri(cfg ConfigProvider) *GetSnapshotUriResponse {
 	}
 }
 
-// handleSnapshotHTTP serves a snapshot from the frame buffer.
-// If no frame is available yet, it returns a 503 Service Unavailable.
-// The response contains raw H.264 NALU data with Content-Type: image/jpeg
-// as a placeholder. Post-MVP, this will be replaced with actual JPEG conversion.
+// handleSnapshotHTTP serves a JPEG snapshot by converting the latest H.264 IDR
+// frame to JPEG via an on-demand FFmpeg subprocess.
 func handleSnapshotHTTP(w http.ResponseWriter, r *http.Request, buf *SnapshotBuffer) {
+	handleSnapshotHTTPWithBin(w, r, buf, "ffmpeg")
+}
+
+// snapshotTimeout is the maximum time allowed for FFmpeg conversion.
+const snapshotTimeout = 5 * time.Second
+
+// handleSnapshotHTTPWithBin is like handleSnapshotHTTP but accepts a custom
+// ffmpeg binary path, used in tests to inject a mock converter.
+func handleSnapshotHTTPWithBin(w http.ResponseWriter, r *http.Request, buf *SnapshotBuffer, ffmpegBin string) {
 	au := buf.Latest()
 	if au == nil {
 		http.Error(w, "snapshot not available: no frame received yet", http.StatusServiceUnavailable)
 		return
 	}
 
-	// Build raw H.264 frame data from NALUs.
+	annexB := buildAnnexB(au.NALUs)
+	if len(annexB) == 0 {
+		http.Error(w, "snapshot not available: empty frame data", http.StatusServiceUnavailable)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), snapshotTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx,
+		ffmpegBin,
+		"-f", "h264",
+		"-i", "pipe:0",
+		"-frames:v", "1",
+		"-f", "image2pipe",
+		"pipe:1",
+	)
+	cmd.Stdin = bytes.NewReader(annexB)
+
+	jpegData, err := cmd.Output()
+	if ctx.Err() != nil {
+		http.Error(w, "snapshot conversion timed out", http.StatusServiceUnavailable)
+		return
+	}
+	if err != nil {
+		http.Error(w, "snapshot conversion failed", http.StatusServiceUnavailable)
+		return
+	}
+
 	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(jpegData)))
 	w.Header().Set("X-Frame-Timestamp", au.Timestamp.UTC().Format(time.RFC3339Nano))
+	w.Write(jpegData)
+}
 
-	var totalLen int
-	for _, nalu := range au.NALUs {
-		totalLen += len(nalu.Data)
+// startCode is the 4-byte H.264 Annex-B start code.
+var startCode = []byte{0x00, 0x00, 0x00, 0x01}
+
+// buildAnnexB reconstructs an H.264 Annex-B bytestream from NALUs.
+// SPS and PPS NALUs are placed before the IDR for decodability.
+func buildAnnexB(nalus []h264.NALU) []byte {
+	var sps, pps, idr, others []h264.NALU
+	for _, n := range nalus {
+		switch {
+		case n.IsSPS:
+			sps = append(sps, n)
+		case n.IsPPS:
+			pps = append(pps, n)
+		case n.IsIDR:
+			idr = append(idr, n)
+		default:
+			others = append(others, n)
+		}
 	}
 
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", totalLen))
-	for _, nalu := range au.NALUs {
-		w.Write(nalu.Data)
+	var buf []byte
+	for _, n := range sps {
+		buf = append(buf, startCode...)
+		buf = append(buf, n.Data...)
 	}
+	for _, n := range pps {
+		buf = append(buf, startCode...)
+		buf = append(buf, n.Data...)
+	}
+	for _, n := range others {
+		buf = append(buf, startCode...)
+		buf = append(buf, n.Data...)
+	}
+	for _, n := range idr {
+		buf = append(buf, startCode...)
+		buf = append(buf, n.Data...)
+	}
+	return buf
 }
