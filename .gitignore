@@ -1,6 +1,6 @@
 # Build artifacts
 build/
-server
+/server
 *.o
 *.exe
 *.dll
