@@ -22,7 +22,7 @@ This document provides detailed compliance information for the rpi-cam ONVIF cam
 |-----------|-------------|-------|
 | `GetSystemDateAndTime` | ✅ | Returns UTC time, manual mode (no NTP sync) |
 | `GetDeviceInformation` | ✅ | Manufacturer, model, firmware, serial, hardware ID from config |
-| `GetCapabilities` | ✅ | Media, PTZ, Device services advertised |
+| `GetCapabilities` | ✅ | Media, PTZ, Device, Imaging services advertised |
 | `GetServices` | ✅ | Lists all ONVIF services with XAddr endpoints |
 | `GetScopes` | ✅ | Name, hardware, and type scopes |
 
@@ -40,6 +40,7 @@ HardwareId: "OV5647"
 Device: XAddr: "http://<camera-ip>:8080/onvif/device_service"
 Media: XAddr: "http://<camera-ip>:8080/onvif/media_service"  
 PTZ: XAddr: "http://<camera-ip>:8080/onvif/ptz_service"
+Imaging: XAddr: "http://<camera-ip>:8080/onvif/device_service"
 ```
 
 ### Media Service

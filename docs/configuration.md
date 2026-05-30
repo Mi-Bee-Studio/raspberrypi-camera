@@ -29,6 +29,10 @@ Camera capture settings control how video frames are captured from the camera de
 
 ```yaml
 camera:
+  # Path to mtxrpicam binary (camera capture subprocess)
+  # This binary and its bundled libcamera libraries must be present at this path
+  bin_path: deploy/bin/mtxrpicam
+
   # Camera device path (V4L2 or libcamera)
   device: /dev/video0
   
@@ -152,7 +156,8 @@ logging:
 
 | Section | Field | Default Value | Type | Description |
 |---------|-------|---------------|------|-------------|
-| **camera** | device | `/dev/video0` | string | Camera device path |
+| **camera** | bin_path | `"deploy/bin/mtxrpicam"` | string | Path to mtxrpicam binary |
+| | device | `/dev/video0` | string | Camera device path |
 | | width | `1280` | int | Capture width in pixels |
 | | height | `720` | int | Capture height in pixels |
 | | fps | `15` | int | Frames per second |
@@ -208,7 +213,8 @@ RPICAM_DEVICE_NAME="Office Camera" ./rpi-cam
 
 | Section | Field | Environment Variable |
 |---------|-------|---------------------|
-| **camera** | device | `RPICAM_CAMERA_DEVICE` |
+| **camera** | bin_path | `RPICAM_CAMERA_BINPATH` |
+| | device | `RPICAM_CAMERA_DEVICE` |
 | | width | `RPICAM_CAMERA_WIDTH` |
 | | height | `RPICAM_CAMERA_HEIGHT` |
 | | fps | `RPICAM_CAMERA_FPS` |
@@ -397,3 +403,5 @@ logging:
 6. **Environment Variables**: Use environment variables for sensitive data like passwords to avoid storing them in configuration files.
 
 7. **Validation**: The service will validate configuration values against hardware constraints. Invalid settings will be logged or defaulted.
+
+8. **Camera Binary**: The `bin_path` must point to a valid mtxrpicam binary. The directory containing this binary must also contain the bundled libcamera shared libraries (libcamera.so.9.9, libcamera-base.so.9.9) and IPA modules. See deployment documentation for details.

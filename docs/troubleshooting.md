@@ -23,6 +23,9 @@ free -h
 top -bn1 | head -20
 ```
 
+# Check camera encoder is working (look for x264 in logs)
+journalctl -u rpi-cam --since "1 minute ago" | grep -i "x264\|encoder\|h264"
+
 ## Camera Detection Issues
 
 ### Symptoms
@@ -69,6 +72,70 @@ vcgencmd get_camera
      device: "/dev/video0"  # or your camera device
    ```
 
+## Camera Encoder Issues
+
+### Symptoms
+- Service starts but logs show "encoder_create(): unable to activate output stream"
+- RTSP stream connects but no video data
+- Snapshot endpoint returns 503 Service Unavailable
+
+### Diagnosis
+```bash
+# Check if mtxrpicam can find libcamera
+LD_LIBRARY_PATH=/home/mickey/rpi-cam/deploy/bin ldd ~/rpi-cam/deploy/bin/mtxrpicam
+# If "libcamera.so.9.9 => not found", bundled libs are missing
+
+# Check if bundled libcamera files exist
+ls -la ~/rpi-cam/deploy/bin/libcamera*.so*
+
+# Check LD_LIBRARY_PATH in systemd service
+grep LD_LIBRARY_PATH /etc/systemd/system/rpi-cam.service
+
+# Test camera directly with rpicam-vid
+rpicam-vid -t 1000 --width 1280 --height 720 -o /dev/null
+
+# Check system libcamera version (may differ from bundled version)
+dpkg -l | grep libcamera
+```
+
+### Root Cause
+The `mtxrpicam` binary is dynamically linked against `libcamera.so.9.9`, which is NOT the same as the system-installed libcamera (Debian 13 provides `libcamera.so.0.7`). The bundled version must be present in `deploy/bin/` and `LD_LIBRARY_PATH` must point there.
+
+### Solutions
+1. **Missing bundled libs**: Re-deploy from mediamtx-rpicamera release
+   ```bash
+   # Download and extract on workstation
+   gh release download v2.6.0 --repo bluenviron/mediamtx-rpicamera \
+     --pattern "mtxrpicam_64.tar.gz"
+   tar xzf mtxrpicam_64.tar.gz
+   
+   # Copy bundled libs to device
+   scp mtxrpicam_64/libcamera*.so* <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/deploy/bin/
+   scp mtxrpicam_64/mtxrpicam <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/deploy/bin/
+   
+   # Restart service
+   sudo systemctl restart rpi-cam
+   ```
+
+2. **LD_LIBRARY_PATH not set**: Verify systemd service configuration
+   ```bash
+   # Should contain: Environment=LD_LIBRARY_PATH=/path/to/deploy/bin
+   systemctl cat rpi-cam
+   
+   # If missing, edit the service file
+   sudo systemctl edit rpi-cam --force
+   # Add: Environment=LD_LIBRARY_PATH=/home/mickey/rpi-cam/deploy/bin
+   sudo systemctl daemon-reload
+   sudo systemctl restart rpi-cam
+   ```
+
+3. **Camera held by another process**: Stop MediaMTX
+   ```bash
+   sudo systemctl stop mediamtx
+   sudo systemctl disable mediamtx
+   # Verify camera is free
+   lsof /dev/video0
+   ```
 ## RTSP Streaming Issues
 
 ### Symptoms
@@ -229,6 +296,11 @@ ffmpeg -rtsp_transport tcp -i rtsp://localhost:8554/stream \
 ffmpeg -version
 ```
 
+# Test snapshot endpoint and check response
+curl -s -w "\nHTTP Status: %{http_code}\n" http://localhost:8080/snapshot -o /dev/null
+# HTTP 200 + "image/jpeg" = working
+# HTTP 503 = camera not providing frames (check encoder)
+
 ### Solutions
 1. **FFmpeg missing**: Install FFmpeg
    ```bash
@@ -353,6 +425,20 @@ WARNING: high memory usage detected
 ```
 - Solution: Reduce resolution, FPS, or bitrate
 
+### Encoder Create Error
+```
+camera: mtxrpicam error: encoder_create(): unable to activate output stream
+```
+- Cause: Bundled libcamera shared libraries missing or LD_LIBRARY_PATH not set
+- Solution: See "Camera Encoder Issues" section
+
+### Shared Library Not Found
+```
+error while loading shared libraries: libcamera.so.9.9: cannot open shared object file
+```
+- Cause: LD_LIBRARY_PATH does not include the deploy/bin/ directory
+- Solution: Set `Environment=LD_LIBRARY_PATH=<deploy-path>/bin` in systemd service
+
 ## System Status Commands
 
 ```bash
@@ -376,6 +462,12 @@ pgrep -f rpi-cam || echo "rpi-cam not running"
 echo "Conflicting Processes:"
 lsof /dev/video0 2>/dev/null | grep -v rpi-cam || echo "No conflicts"
 ```
+
+echo "Encoder Status:"
+journalctl -u rpi-cam --since "5 minutes ago" | grep -i "x264\|encoder" | tail -3
+
+echo "Library Resolution:"
+LD_LIBRARY_PATH=~/rpi-cam/deploy/bin ldd ~/rpi-cam/deploy/bin/mtxrpicam 2>&1 | grep -E "found|libcamera"
 
 ## Contact Support
 

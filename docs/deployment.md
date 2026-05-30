@@ -18,6 +18,47 @@ This guide covers deployment of the rpi-cam ONVIF camera server for Raspberry Pi
 - SSH access to target device
 - SCP file transfer capability
 
+## Camera Capture Dependencies
+
+### mtxrpicam Binary Bundle
+
+rpi-cam uses `mtxrpicam` from the [mediamtx-rpicamera](https://github.com/bluenviron/mediamtx-rpicamera) project for camera capture. This binary bundles its own `libcamera` shared libraries to avoid version conflicts with the system-installed libcamera.
+
+**Required files in `deploy/bin/`:**
+```
+deploy/bin/
+├── mtxrpicam                        # Camera capture + H.264 encoding binary (1.7MB)
+├── libcamera.so.9.9                  # Bundled libcamera (5.7MB)
+├── libcamera-base.so.9.9             # Bundled libcamera base (140KB)
+├── ipa_module/
+│   ├── ipa_rpi_vc4.so                # VC4 ISP module
+│   └── ipa_rpi_vc4.so.sign           # Module signature
+├── libpisp/
+│   └── backend_default_config.json   # PiSP backend config
+└── ipa_conf/                         # IPA tuning files
+```
+
+**Installing mtxrpicam bundle:**
+```bash
+# Download latest release from mediamtx-rpicamera
+# For arm64 (RPi 3B/4/5):
+gh release download v2.6.0 --repo bluenviron/mediamtx-rpicamera \
+  --pattern "mtxrpicam_64.tar.gz" --dir /tmp
+tar xzf /tmp/mtxrpicam_64.tar.gz -C /tmp/
+
+# Deploy to target device
+scp -r /tmp/mtxrpicam_64/* <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/deploy/bin/
+scp /tmp/mtxrpicam_64/mtxrpicam <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/deploy/bin/mtxrpicam
+```
+
+**Why bundled libcamera?** Debian 13 ships libcamera 0.7.0 (`libcamera.so.0.7`), but mtxrpicam is compiled against a specific libcamera version (`libcamera.so.9.9`). The bundled library avoids this mismatch. If you see `encoder_create(): unable to activate output stream`, ensure the bundled libs are in `deploy/bin/` and `LD_LIBRARY_PATH` is set correctly.
+
+**Additional device dependency:**
+```bash
+# FFmpeg is required for snapshot JPEG conversion
+ssh <your-rpi-user>@<your-rpi-ip> 'sudo apt install -y ffmpeg'
+```
+
 ## Build Process
 
 ### Cross-Compilation from Workstation
@@ -56,6 +97,9 @@ scp configs/config.example.yaml <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/config.y
 
 # Copy systemd service unit
 scp deploy/rpi-cam.service <your-rpi-user>@<your-rpi-ip>:/tmp/
+
+# Copy camera capture dependencies
+scp -r deploy/bin/ <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/deploy/
 ```
 
 ### 3. Install Systemd Service
@@ -66,6 +110,8 @@ ssh <your-rpi-user>@<your-rpi-ip> "sudo mv /tmp/rpi-cam.service /etc/systemd/sys
 ssh <your-rpi-user>@<your-rpi-ip> "sudo systemctl daemon-reload"
 ssh <your-rpi-user>@<your-rpi-ip> "sudo systemctl enable rpi-cam"
 ```
+
+> **Note:** The systemd unit sets `Environment=LD_LIBRARY_PATH=/home/mickey/rpi-cam/deploy/bin` so the bundled libcamera libraries are found at runtime. If you install to a different path, update this value in the service file accordingly.
 
 ### 4. Automated Deployment
 
@@ -178,6 +224,10 @@ ffmpeg -rtsp_transport tcp -i rtsp://<your-rpi-ip>:8554/stream -t 10 test.mp4
 vlc rtsp://<your-rpi-ip>:8554/stream
 ```
 
+# On the device itself:
+ffprobe -rtsp_transport tcp -i rtsp://localhost:8554/stream
+# Expected: Stream #0:0: Video: h264 (High), yuv420p, 1280x720, 15 fps
+
 ### 3. ONVIF Discovery Test
 
 ```bash
@@ -201,6 +251,22 @@ curl -X POST http://<your-rpi-ip>:8080/onvif/device_service \
 # 5. Verify camera appears online and streams video
 ```
 
+### 5. Snapshot Test
+
+```bash
+# Test snapshot endpoint
+curl -s http://<your-rpi-ip>:8080/snapshot -o snapshot.jpg
+file snapshot.jpg
+# Expected: JPEG image data, baseline, precision 8, 1280x720
+```
+
+### Quick Health Check
+
+```bash
+# Check memory usage (target: ~20MB total)
+ps -o pid,rss,comm -p $(pgrep -f "rpi-cam|mtxrpicam")
+```
+
 ## Troubleshooting Common Issues
 
 ### Camera Access Issues
@@ -216,6 +282,22 @@ sudo systemctl disable mediamtx
 **Solution:** Check DT overlay in `/boot/firmware/config.txt`:
 ```
 dtoverlay=ov5647  # or imx219, imx477, etc.
+```
+
+### Camera Encoder Issues
+
+**Problem:** "encoder_create(): unable to activate output stream"
+**Root Cause:** mtxrpicam cannot find the bundled libcamera shared libraries.
+**Solution:**
+```bash
+# Verify bundled libs exist
+ls ~/rpi-cam/deploy/bin/libcamera*.so*
+
+# Verify LD_LIBRARY_PATH in service
+grep LD_LIBRARY_PATH /etc/systemd/system/rpi-cam.service
+
+# If libs are missing, re-deploy from mediamtx-rpicamera release
+# See "Camera Capture Dependencies" section above
 ```
 
 ### Network Access Issues
