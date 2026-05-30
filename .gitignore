@@ -1,0 +1,36 @@
+# Build artifacts
+build/
+server
+*.o
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Configuration (contains deployment-specific values)
+configs/config.yaml
+
+# Deployment binaries
+deploy/bin/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage.out
+coverage.html
+
+# Project-specific
+AGENTS.md
+.omo/
+docs/blog/

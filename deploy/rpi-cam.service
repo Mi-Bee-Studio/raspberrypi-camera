@@ -1,0 +1,16 @@
+[Unit]
+Description=RPi ONVIF Camera Server
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=rpi-cam
+WorkingDirectory=/opt/rpi-cam
+ExecStart=/opt/rpi-cam/rpi-cam -config /opt/rpi-cam/config.yaml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

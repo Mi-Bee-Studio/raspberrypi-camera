@@ -1,0 +1,86 @@
+# Example configuration — copy to config.yaml and adjust for your setup
+# rpi3b-cam configuration
+# RPi 3B + OV5647 (Pi Camera V1) defaults
+
+# Camera capture settings
+camera:
+  # Camera device path (V4L2 or libcamera)
+  device: /dev/video0
+
+  # Capture resolution (width x height)
+  # Supported: 640x480, 1296x972, 1920x1080, 2592x1944
+  width: 1280
+  height: 720
+
+  # Frames per second (max 30 for OV5647)
+  fps: 15
+
+  # Video codec (h264, h265)
+  codec: h264
+
+  # Target bitrate in bits per second (2 Mbps)
+  bitrate: 2000000
+
+  # Image controls (OV5647 hardware ranges):
+  # Brightness: -1.0 to 1.0 (0.0 = default)
+  brightness: 0.0
+
+  # Contrast: 0.0 to 32.0 (1.0 = default)
+  contrast: 1.0
+
+  # Saturation: 0.0 to 32.0 (1.0 = default)
+  saturation: 1.0
+
+  # Sharpness: 0.0 to 16.0 (1.0 = default)
+  sharpness: 1.0
+
+# RTSP server settings
+rtsp:
+  # RTSP port (MediaMTX default: 8554)
+  port: 8554
+
+  # Optional RTSP authentication (leave empty for no auth)
+  username: ""
+  password: ""
+
+# ONVIF server settings
+onvif:
+  # ONVIF HTTP port for SOAP/WS-Discovery
+  port: 8080
+
+  # WS-UsernameToken credentials used by MiBee NVR
+  username: "admin"
+  password: ""  # REQUIRED: set your ONVIF password
+
+# RTMP push settings (disabled by default)
+rtmp:
+  # Enable RTMP push to cloud services
+  enabled: false
+
+  # RTMP push URL (e.g., Aliyun, Twitch, YouTube)
+  url: "rtmp://push-server/app/stream"
+
+# ONVIF device information (exposed via GetDeviceInformation)
+device:
+  # Friendly camera name
+  name: "Pi Camera V1"
+
+  # Device manufacturer
+  manufacturer: "Raspberry Pi"
+
+  # Camera sensor model
+  model: "OV5647"
+
+  # Firmware version string
+  firmware: "1.0.0"
+
+  # Hardware identifier
+  hardware_id: "OV5647"
+
+  # Device serial number
+  serial_number: ""
+
+# Logging settings
+logging:
+  # Log level: debug, info, warn, error
+  level: "info"
