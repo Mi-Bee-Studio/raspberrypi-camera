@@ -89,6 +89,7 @@ type Capabilities struct {
 	Device *DeviceCapabilities `xml:"tt:Device,omitempty"`
 	Media  *MediaCapabilities  `xml:"tt:Media,omitempty"`
 	PTZ    *PTZCapabilities    `xml:"tt:PTZ,omitempty"`
+	Imaging *ImagingCapabilities `xml:"tt:Imaging,omitempty"`
 }
 
 // DeviceCapabilities describes the Device service capabilities.
@@ -103,6 +104,11 @@ type MediaCapabilities struct {
 
 // PTZCapabilities describes the PTZ service capabilities.
 type PTZCapabilities struct {
+	XAddr string `xml:"tt:XAddr"`
+}
+
+// ImagingCapabilities describes the Imaging service capabilities.
+type ImagingCapabilities struct {
 	XAddr string `xml:"tt:XAddr"`
 }
 
@@ -195,6 +201,9 @@ func RegisterDeviceHandlers(s *Server, host string, info DeviceInfo) {
 				PTZ: &PTZCapabilities{
 					XAddr: baseURL + "/ptz_service",
 				},
+				Imaging: &ImagingCapabilities{
+					XAddr: baseURL + "/device_service",
+				},
 			},
 		}, nil
 	})
@@ -215,6 +224,11 @@ func RegisterDeviceHandlers(s *Server, host string, info DeviceInfo) {
 				{
 					Namespace: ONVIFPTZNS,
 					XAddr:     baseURL + "/ptz_service",
+					Version:   Version{Major: 1, Minor: 0},
+				},
+				{
+					Namespace: ONVIFImgNS,
+					XAddr:     baseURL + "/device_service",
 					Version:   Version{Major: 1, Minor: 0},
 				},
 			},
