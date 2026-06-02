@@ -17,6 +17,7 @@ import (
 	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/ptz"
 	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/rtmp"
 	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/rtsp"
+	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/web"
 )
 
 var (
@@ -104,16 +105,20 @@ func main() {
 	defer cancel()
 
 	localIP := detectLocalIP()
-	adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
+	log.Printf("rpi-cam %s starting (fallback IP %s)", version, localIP)
+adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
 
 	// --- Step 1: Camera ---
-	cameraParams := camera.Params{
-		Width:    uint32(cfg.Camera.Width),
-		Height:   uint32(cfg.Camera.Height),
-		FPS:      float32(cfg.Camera.FPS),
-		Bitrate:  uint32(cfg.Camera.Bitrate),
-		Codec:    "hardwareH264",
-	}
+	cameraParams := camera.DefaultParams()
+	cameraParams.Width = uint32(cfg.Camera.Width)
+	cameraParams.Height = uint32(cfg.Camera.Height)
+	cameraParams.FPS = float32(cfg.Camera.FPS)
+	cameraParams.Bitrate = uint32(cfg.Camera.Bitrate)
+	cameraParams.Brightness = float32(cfg.Camera.Brightness)
+	cameraParams.Contrast = float32(cfg.Camera.Contrast)
+	cameraParams.Saturation = float32(cfg.Camera.Saturation)
+	cameraParams.Sharpness = float32(cfg.Camera.Sharpness)
+	cameraParams.Codec = "hardwareH264"
 	cameraInfo := camera.CameraInfo{
 		Name:         cfg.Device.Name,
 		Manufacturer: cfg.Device.Manufacturer,
@@ -183,6 +188,9 @@ func main() {
 	// --- Step 5: ONVIF Server ---
 	onvifServer := onvif.New(adapter)
 
+	// fallbackHost is used only when the per-request client IP can't be determined
+	// (e.g. test callers). Real ONVIF responses echo the NVR's source IP back as
+	// the XAddr/RTSP host so the URL is reachable from whichever interface was used.
 	deviceHost := fmt.Sprintf("%s:%d", localIP, cfg.ONVIF.Port)
 	onvif.RegisterDeviceHandlers(onvifServer, deviceHost, onvif.DeviceInfo{
 		Name:         cfg.Device.Name,
@@ -197,8 +205,29 @@ func main() {
 	onvif.RegisterPTZHandlers(onvifServer, ptzState)
 
 	// Snapshot: second AUHub subscriber
+	snapshotBuf := onvif.NewSnapshotBuffer()
 	snapshotSub := auHub.Subscribe(ctx)
-	onvif.RegisterSnapshotHandlers(onvifServer, snapshotSub.Channel)
+	onvif.RegisterSnapshotHandlers(onvifServer, snapshotBuf, snapshotSub.Channel)
+
+	// --- Step 5.5: Web UI Server ---
+	if cfg.Web.Enabled {
+		webServer := web.New(web.Config{
+			Port:        cfg.Web.Port,
+			Username:    cfg.Web.Username,
+			Password:    cfg.Web.Password,
+			ConfigPath:  *configPath,
+			OnvifConfig: adapter,
+			Params:      paramManager,
+			PTZ:         ptzState,
+			Snapshot:    snapshotBuf,
+		})
+		go func() {
+			if err := webServer.Start(ctx); err != nil {
+				log.Printf("web server exited: %v", err)
+			}
+		}()
+		defer webServer.Stop()
+	}
 
 	// --- Step 6: WS-Discovery ---
 	discovery := onvif.NewDiscovery(cfg, localIP)
