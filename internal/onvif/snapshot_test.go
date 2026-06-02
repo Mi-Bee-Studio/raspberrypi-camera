@@ -21,7 +21,7 @@ import (
 func TestGetSnapshotUri(t *testing.T) {
 	cfg := &mockConfig{username: "admin", password: "testpass", port: 8080}
 
-	resp := handleGetSnapshotUri(cfg)
+	resp := handleGetSnapshotUri(context.Background(), cfg)
 
 	if !strings.Contains(resp.MediaUri.Uri, "/snapshot") {
 		t.Errorf("expected URI to contain '/snapshot', got %q", resp.MediaUri.Uri)
@@ -219,7 +219,7 @@ func TestSnapshotTimeoutWithCancelledContext(t *testing.T) {
 func TestGetSnapshotUriViaHTTPIntegration(t *testing.T) {
 	cfg := &mockConfig{username: "admin", password: "testpass", port: 8080}
 	srv := New(cfg)
-	RegisterSnapshotHandlers(srv, make(chan h264.AccessUnit))
+	RegisterSnapshotHandlers(srv, NewSnapshotBuffer(), make(chan h264.AccessUnit))
 
 	soapReq := `<?xml version="1.0" encoding="UTF-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
@@ -331,7 +331,7 @@ func TestSnapshotUnavailableViaServerServeHTTP(t *testing.T) {
 
 func TestGetSnapshotUriMarshalling(t *testing.T) {
 	cfg := &mockConfig{username: "admin", password: "testpass", port: 8080}
-	resp := handleGetSnapshotUri(cfg)
+	resp := handleGetSnapshotUri(context.Background(), cfg)
 
 	data, err := MarshalSOAP(resp)
 	if err != nil {
@@ -352,6 +352,23 @@ func TestGetSnapshotUriMarshalling(t *testing.T) {
 	}
 }
 
+func TestGetSnapshotUri_ContextFallback(t *testing.T) {
+	cfg := &mockConfig{username: "admin", password: "testpass", port: 8080}
+
+	// Without client IP in context, falls back to mockConfig.DeviceIP()
+	resp := handleGetSnapshotUri(context.Background(), cfg)
+	if !strings.Contains(resp.MediaUri.Uri, "192.168.1.100") {
+		t.Errorf("expected fallback IP in URI, got %q", resp.MediaUri.Uri)
+	}
+
+	// With client IP in context, the URI uses the client IP
+	ctx := WithServerIP(context.Background(), "10.20.30.40")
+	resp = handleGetSnapshotUri(ctx, cfg)
+	if !strings.Contains(resp.MediaUri.Uri, "10.20.30.40") {
+		t.Errorf("expected client IP in URI, got %q", resp.MediaUri.Uri)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Test SnapshotBuffer with RegisterSnapshotHandlers and live channel
 // ---------------------------------------------------------------------------
@@ -361,7 +378,7 @@ func TestSnapshotHandlerFedFromChannel(t *testing.T) {
 	frameCh := make(chan h264.AccessUnit, 16)
 
 	srv := New(cfg)
-	RegisterSnapshotHandlers(srv, frameCh)
+	RegisterSnapshotHandlers(srv, NewSnapshotBuffer(), frameCh)
 
 	// Send a key frame through the channel.
 	frameCh <- h264.AccessUnit{
@@ -391,7 +408,7 @@ func TestSnapshotHandlerFedFromChannel(t *testing.T) {
 func TestGetSnapshotUriRawSOAP(t *testing.T) {
 	cfg := &mockConfig{username: "admin", password: "testpass", port: 8080}
 	srv := New(cfg)
-	RegisterSnapshotHandlers(srv, make(chan h264.AccessUnit))
+	RegisterSnapshotHandlers(srv, NewSnapshotBuffer(), make(chan h264.AccessUnit))
 
 	soapReq := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
@@ -405,6 +422,7 @@ func TestGetSnapshotUriRawSOAP(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/onvif/media_service", strings.NewReader(soapReq))
 	req.Header.Set("Content-Type", "application/soap+xml")
+	req.RemoteAddr = "192.168.1.100:55123"
 	w := httptest.NewRecorder()
 
 	srv.ServeHTTP(w, req)
@@ -417,6 +435,7 @@ func TestGetSnapshotUriRawSOAP(t *testing.T) {
 	if !strings.Contains(body, "http://192.168.1.100:8080/snapshot") {
 		t.Errorf("response body missing snapshot URI.\nBody:\n%s", body)
 	}
+
 
 	// Verify with the same struct the NVR uses
 	type trtGetSnapshotUriResponse struct {
@@ -442,3 +461,4 @@ func TestGetSnapshotUriRawSOAP(t *testing.T) {
 		t.Errorf("expected URI %q, got %q", expectedURI, env.Body.GetSnapshotUriResponse.MediaUri.URI)
 	}
 }
+

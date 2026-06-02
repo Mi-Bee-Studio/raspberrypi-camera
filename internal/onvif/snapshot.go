@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"strings"
 	"net/http"
 	"os/exec"
 	"sync"
@@ -21,10 +22,14 @@ type GetSnapshotUriResponse struct {
 
 // SnapshotBuffer stores the latest H.264 key frame data for snapshot requests.
 // It subscribes to the AUHub and keeps the most recent IDR frame in memory.
+// SPS and PPS NALUs are tracked separately since mtxrpicam may send them
+// in separate access units from the IDR slice.
 type SnapshotBuffer struct {
 	mu         sync.RWMutex
 	latestAU   *h264.AccessUnit
 	available  bool
+	lastSPS    []byte
+	lastPPS    []byte
 }
 
 // NewSnapshotBuffer creates a new frame buffer.
@@ -33,13 +38,25 @@ func NewSnapshotBuffer() *SnapshotBuffer {
 }
 
 // Feed updates the buffer with a new access unit.
-// Only IDR frames are stored to ensure we always have a decodable reference.
+// It always tracks SPS/PPS from any frame and stores IDR frames for snapshot use.
 func (sb *SnapshotBuffer) Feed(au h264.AccessUnit) {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+
+	// Track SPS and PPS from every access unit (they may come in non-IDR frames).
+	for i := range au.NALUs {
+		if au.NALUs[i].IsSPS {
+			sb.lastSPS = append([]byte(nil), au.NALUs[i].Data...)
+		}
+		if au.NALUs[i].IsPPS {
+			sb.lastPPS = append([]byte(nil), au.NALUs[i].Data...)
+		}
+	}
+
+	// Only store IDR frames for snapshot conversion.
 	if !au.KeyFrame {
 		return
 	}
-	sb.mu.Lock()
-	defer sb.mu.Unlock()
 
 	copied := h264.AccessUnit{
 		NALUs:     make([]h264.NALU, len(au.NALUs)),
@@ -59,15 +76,38 @@ func (sb *SnapshotBuffer) Feed(au h264.AccessUnit) {
 	sb.available = true
 }
 
-// Latest returns the most recent IDR access unit. Returns nil if none available.
+// Latest returns the most recent IDR access unit with SPS/PPS injected if missing.
+// Returns nil if no IDR frame has been received.
 func (sb *SnapshotBuffer) Latest() *h264.AccessUnit {
 	sb.mu.RLock()
 	defer sb.mu.RUnlock()
 	if !sb.available || sb.latestAU == nil {
 		return nil
 	}
-	au := sb.latestAU
-	return au
+
+	au := *sb.latestAU // shallow copy
+
+	// Check if SPS/PPS are already present in the AU.
+	hasSPS, hasPPS := false, false
+	for _, n := range au.NALUs {
+		if n.IsSPS { hasSPS = true }
+		if n.IsPPS { hasPPS = true }
+	}
+
+	// Inject cached SPS/PPS if missing.
+	var extra []h264.NALU
+	if !hasSPS && sb.lastSPS != nil {
+		extra = append(extra, h264.NALU{Type: 7, Data: sb.lastSPS, IsSPS: true})
+	}
+	if !hasPPS && sb.lastPPS != nil {
+		extra = append(extra, h264.NALU{Type: 8, Data: sb.lastPPS, IsPPS: true})
+	}
+
+	if len(extra) > 0 {
+		au.NALUs = append(extra, au.NALUs...)
+	}
+
+	return &au
 }
 
 // Available reports whether a frame has been stored.
@@ -78,11 +118,9 @@ func (sb *SnapshotBuffer) Available() bool {
 }
 
 // RegisterSnapshotHandlers registers the GetSnapshotUri SOAP action and the
-// /snapshot HTTP endpoint. The frameSource channel feeds the snapshot buffer
-// with incoming H.264 access units for the /snapshot endpoint.
-func RegisterSnapshotHandlers(s *Server, frameSource <-chan h264.AccessUnit) {
-	buf := NewSnapshotBuffer()
-
+// /snapshot HTTP endpoint. The buf is shared with the web UI for /api/snapshot.
+// The frameSource channel feeds buf with incoming H.264 access units.
+func RegisterSnapshotHandlers(s *Server, buf *SnapshotBuffer, frameSource <-chan h264.AccessUnit) {
 	// Feed buffer from frame source in background goroutine.
 	go func() {
 		for au := range frameSource {
@@ -91,7 +129,7 @@ func RegisterSnapshotHandlers(s *Server, frameSource <-chan h264.AccessUnit) {
 	}()
 
 	s.RegisterAction("GetSnapshotUri", func(ctx context.Context, body []byte, auth *AuthResult) (interface{}, error) {
-		return handleGetSnapshotUri(s.config), nil
+		return handleGetSnapshotUri(ctx, s.config), nil
 	})
 
 	s.snapshotHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -100,8 +138,11 @@ func RegisterSnapshotHandlers(s *Server, frameSource <-chan h264.AccessUnit) {
 }
 
 // handleGetSnapshotUri returns the snapshot URL for the device.
-func handleGetSnapshotUri(cfg ConfigProvider) *GetSnapshotUriResponse {
-	uri := fmt.Sprintf("http://%s:%d/snapshot", cfg.DeviceIP(), cfg.ONVIFPort())
+// The IP portion reflects the NVR's source IP from the request context so the
+// returned URL is reachable from whichever interface the NVR used.
+func handleGetSnapshotUri(ctx context.Context, cfg ConfigProvider) *GetSnapshotUriResponse {
+	ip := ServerIPFromContext(ctx, cfg.DeviceIP())
+	uri := fmt.Sprintf("http://%s:%d/snapshot", ip, cfg.ONVIFPort())
 
 	return &GetSnapshotUriResponse{
 		MediaUri: MediaUri{
@@ -125,22 +166,39 @@ const snapshotTimeout = 5 * time.Second
 // handleSnapshotHTTPWithBin is like handleSnapshotHTTP but accepts a custom
 // ffmpeg binary path, used in tests to inject a mock converter.
 func handleSnapshotHTTPWithBin(w http.ResponseWriter, r *http.Request, buf *SnapshotBuffer, ffmpegBin string) {
-	au := buf.Latest()
-	if au == nil {
-		http.Error(w, "snapshot not available: no frame received yet", http.StatusServiceUnavailable)
+	jpegData, err := ConvertIDRToJPEG(r.Context(), buf.Latest(), ffmpegBin)
+	if err != nil {
+		switch {
+		case buf.Latest() == nil:
+			http.Error(w, "snapshot not available: no frame received yet", http.StatusServiceUnavailable)
+		default:
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		}
 		return
 	}
 
+	au := buf.Latest()
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(jpegData)))
+	w.Header().Set("X-Frame-Timestamp", au.Timestamp.UTC().Format(time.RFC3339Nano))
+	w.Write(jpegData)
+}
+
+// ConvertIDRToJPEG converts an H.264 access unit to JPEG using FFmpeg.
+// It builds an Annex-B bytestream and pipes it through FFmpeg for conversion.
+// Returns an error if au is nil, has no data, or FFmpeg fails.
+func ConvertIDRToJPEG(ctx context.Context, au *h264.AccessUnit, ffmpegBin string) ([]byte, error) {
+	if au == nil {
+		return nil, fmt.Errorf("snapshot not available: no frame received yet")
+	}
 	annexB := buildAnnexB(au.NALUs)
 	if len(annexB) == 0 {
-		http.Error(w, "snapshot not available: empty frame data", http.StatusServiceUnavailable)
-		return
+		return nil, fmt.Errorf("snapshot not available: empty frame data")
 	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), snapshotTimeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, snapshotTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx,
+	cmd := exec.CommandContext(timeoutCtx,
 		ffmpegBin,
 		"-f", "h264",
 		"-i", "pipe:0",
@@ -149,21 +207,18 @@ func handleSnapshotHTTPWithBin(w http.ResponseWriter, r *http.Request, buf *Snap
 		"pipe:1",
 	)
 	cmd.Stdin = bytes.NewReader(annexB)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 
 	jpegData, err := cmd.Output()
-	if ctx.Err() != nil {
-		http.Error(w, "snapshot conversion timed out", http.StatusServiceUnavailable)
-		return
+	if timeoutCtx.Err() != nil {
+		return nil, fmt.Errorf("snapshot conversion timed out")
 	}
 	if err != nil {
-		http.Error(w, "snapshot conversion failed", http.StatusServiceUnavailable)
-		return
+		return nil, fmt.Errorf("snapshot conversion failed: %s", strings.TrimSpace(stderr.String()))
 	}
 
-	w.Header().Set("Content-Type", "image/jpeg")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(jpegData)))
-	w.Header().Set("X-Frame-Timestamp", au.Timestamp.UTC().Format(time.RFC3339Nano))
-	w.Write(jpegData)
+	return jpegData, nil
 }
 
 // startCode is the 4-byte H.264 Annex-B start code.
