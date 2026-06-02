@@ -26,22 +26,28 @@ const (
 )
 
 // Discovery handles WS-Discovery Probe/ProbeMatches for ONVIF device discovery.
+// Discovery handles WS-Discovery Probe/ProbeMatches for ONVIF device discovery.
 type Discovery struct {
-	uuid     string
-	scopes   []string
-	xAddrs   []string
-	listener *net.UDPConn
-	mu       sync.Mutex
+	uuid       string
+	scopes     []string
+	fallbackIP string // device's own IP, used only when client IP is unavailable
+	port       int
+	listener   *net.UDPConn
+	mu         sync.Mutex
 }
 
 // NewDiscovery creates a new WS-Discovery responder.
-func NewDiscovery(cfg *config.Config, localIP string) *Discovery {
+//
+// fallbackIP is the device's own IP address. It is used as the XAddr host in
+// ProbeMatches only when no per-request client IP can be determined (rare —
+// both UDP and HTTP probes carry the requester's source address).
+func NewDiscovery(cfg *config.Config, fallbackIP string) *Discovery {
 	port := cfg.ONVIF.Port
 	if port == 0 {
 		port = 8080
 	}
-	if localIP == "" {
-		localIP = detectLocalIP()
+	if fallbackIP == "" {
+		fallbackIP = detectLocalIP()
 	}
 
 	name := cfg.Device.Name
@@ -54,13 +60,12 @@ func NewDiscovery(cfg *config.Config, localIP string) *Discovery {
 	}
 
 	return &Discovery{
-		uuid:   "uuid:" + uuid.New().String(),
+		uuid:       "uuid:" + uuid.New().String(),
+		fallbackIP: fallbackIP,
+		port:       port,
 		scopes: []string{
 			"onvif://www.onvif.org/name/" + name,
 			"onvif://www.onvif.org/hardware/" + hw,
-		},
-		xAddrs: []string{
-			fmt.Sprintf("http://%s:%d/onvif/device_service", localIP, port),
 		},
 	}
 }
@@ -71,8 +76,17 @@ func (d *Discovery) UUID() string { return d.uuid }
 // Scopes returns the ONVIF scope URIs.
 func (d *Discovery) Scopes() []string { return d.scopes }
 
-// XAddrs returns the XAddr endpoint URLs.
-func (d *Discovery) XAddrs() []string { return d.xAddrs }
+// XAddrs returns the XAddr endpoint URLs built with the given client IP
+// (falling back to the device's own address when clientIP is empty).
+func (d *Discovery) XAddrs(clientIP string) []string {
+	ip := clientIP
+	if ip == "" {
+		ip = d.fallbackIP
+	}
+	return []string{
+		fmt.Sprintf("http://%s:%d/onvif/device_service", ip, d.port),
+	}
+}
 
 // StartUDP starts listening for UDP multicast probes on 239.255.255.250:3702.
 func (d *Discovery) StartUDP(ctx context.Context) error {
@@ -136,7 +150,11 @@ func (d *Discovery) readLoop(ctx context.Context) {
 		}
 
 		msg := buf[:n]
-		resp := d.handleProbe(msg)
+		clientIP := ""
+		if src != nil {
+			clientIP = src.IP.String()
+		}
+		resp := d.handleProbe(msg, clientIP)
 		if resp == nil {
 			continue
 		}
@@ -149,6 +167,8 @@ func (d *Discovery) readLoop(ctx context.Context) {
 }
 
 // HandleHTTPProbe handles HTTP POST probe to /onvif/device_service.
+// The client IP is taken from the request context (populated by Server.ServeHTTP
+// from r.RemoteAddr), so the response uses whichever address the NVR reached.
 func (d *Discovery) HandleHTTPProbe(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -161,7 +181,8 @@ func (d *Discovery) HandleHTTPProbe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := d.handleProbe(body)
+	clientIP := ServerIPFromContext(r.Context(), "")
+	resp := d.handleProbe(body, clientIP)
 	if resp == nil {
 		w.WriteHeader(http.StatusOK)
 		return
@@ -181,7 +202,9 @@ type probeEnvelope struct {
 }
 
 // handleProbe processes a Probe message and responds with ProbeMatches.
-func (d *Discovery) handleProbe(msg []byte) []byte {
+// clientIP is the source IP of the probe (UDP src or HTTP RemoteAddr host);
+// when empty the device's fallback address is used.
+func (d *Discovery) handleProbe(msg []byte, clientIP string) []byte {
 	var env probeEnvelope
 	if err := xml.Unmarshal(msg, &env); err != nil {
 		return nil
@@ -201,7 +224,7 @@ func (d *Discovery) handleProbe(msg []byte) []byte {
 		messageID = "uuid:unknown"
 	}
 
-	return d.buildProbeMatches(messageID)
+	return d.buildProbeMatches(messageID, clientIP)
 }
 
 // isProbeAction checks if the SOAP action is a WS-Discovery Probe.
@@ -212,9 +235,11 @@ func isProbeAction(action string) bool {
 }
 
 // buildProbeMatches creates the ProbeMatches XML response.
-func (d *Discovery) buildProbeMatches(messageID string) []byte {
+// clientIP overrides the XAddr host when non-empty; pass "" to use the
+// device's own fallback address.
+func (d *Discovery) buildProbeMatches(messageID, clientIP string) []byte {
 	scopesStr := strings.Join(d.scopes, " ")
-	xaddrsStr := strings.Join(d.xAddrs, " ")
+	xaddrsStr := strings.Join(d.XAddrs(clientIP), " ")
 
 	// Build raw XML to maintain precise namespace control matching NVR expectations.
 	// The NVR's probeMatchEnvelope uses local-name matching, so the XML element names

@@ -1,10 +1,11 @@
 package onvif
 
 import (
-	"context"
-	"encoding/xml"
+"context"
+"encoding/xml"
 	"fmt"
-	"time"
+	"net"
+"time"
 )
 
 // DeviceInfo contains device identification information for ONVIF responses.
@@ -151,10 +152,13 @@ type GetScopesResponse struct {
 
 // RegisterDeviceHandlers registers all Device service handlers on the ONVIF server.
 //
-// host should be the hostname or IP address and port (e.g. "camera.example.com:8080")
-// used to construct XAddr URLs in capabilities and service responses.
-func RegisterDeviceHandlers(s *Server, host string, info DeviceInfo) {
-	baseURL := fmt.Sprintf("http://%s/onvif", host)
+// fallbackHost is the device's own address (e.g. "192.168.1.10:8080"). It is used
+// to build XAddr URLs ONLY when the request's client IP can't be determined;
+// in practice every real ONVIF client reaches us from an addressable interface,
+// so handlers will prefer the per-request IP via ServerIPFromContext.
+func RegisterDeviceHandlers(s *Server, fallbackHost string, info DeviceInfo) {
+	fallbackIP := stripPort(fallbackHost)
+	onvifPort := s.config.ONVIFPort()
 
 	s.RegisterAction("GetSystemDateAndTime", func(ctx context.Context, body []byte, auth *AuthResult) (interface{}, error) {
 		now := time.Now().UTC()
@@ -190,6 +194,7 @@ func RegisterDeviceHandlers(s *Server, host string, info DeviceInfo) {
 	})
 
 	s.RegisterAction("GetCapabilities", func(ctx context.Context, body []byte, auth *AuthResult) (interface{}, error) {
+		baseURL := baseURLForRequest(ctx, fallbackIP, onvifPort)
 		return &GetCapabilitiesResponse{
 			Capabilities: Capabilities{
 				Device: &DeviceCapabilities{
@@ -209,31 +214,32 @@ func RegisterDeviceHandlers(s *Server, host string, info DeviceInfo) {
 	})
 
 	s.RegisterAction("GetServices", func(ctx context.Context, body []byte, auth *AuthResult) (interface{}, error) {
-		return &GetServicesResponse{
-			Services: []Service{
-				{
-					Namespace: ONVIFDeviceNS,
-					XAddr:     baseURL + "/device_service",
-					Version:   Version{Major: 1, Minor: 0},
-				},
-				{
-					Namespace: ONVIFMediaNS,
-					XAddr:     baseURL + "/media_service",
-					Version:   Version{Major: 1, Minor: 0},
-				},
-				{
-					Namespace: ONVIFPTZNS,
-					XAddr:     baseURL + "/ptz_service",
-					Version:   Version{Major: 1, Minor: 0},
-				},
-				{
-					Namespace: ONVIFImgNS,
-					XAddr:     baseURL + "/device_service",
-					Version:   Version{Major: 1, Minor: 0},
-				},
-			},
-		}, nil
-	})
+		baseURL := baseURLForRequest(ctx, fallbackIP, onvifPort)
+return &GetServicesResponse{
+Services: []Service{
+{
+Namespace: ONVIFDeviceNS,
+XAddr:     baseURL + "/device_service",
+Version:   Version{Major: 1, Minor: 0},
+},
+{
+Namespace: ONVIFMediaNS,
+XAddr:     baseURL + "/media_service",
+Version:   Version{Major: 1, Minor: 0},
+},
+{
+Namespace: ONVIFPTZNS,
+XAddr:     baseURL + "/ptz_service",
+Version:   Version{Major: 1, Minor: 0},
+},
+{
+Namespace: ONVIFImgNS,
+XAddr:     baseURL + "/device_service",
+Version:   Version{Major: 1, Minor: 0},
+},
+},
+}, nil
+})
 
 	s.RegisterAction("GetScopes", func(ctx context.Context, body []byte, auth *AuthResult) (interface{}, error) {
 		return &GetScopesResponse{
@@ -244,4 +250,22 @@ func RegisterDeviceHandlers(s *Server, host string, info DeviceInfo) {
 			},
 		}, nil
 	})
+}
+
+// baseURLForRequest returns "http://<ip>:<port>/onvif" using the per-request
+// client IP if available, otherwise the fallback.
+func baseURLForRequest(ctx context.Context, fallbackIP string, port int) string {
+	ip := ServerIPFromContext(ctx, fallbackIP)
+	return fmt.Sprintf("http://%s:%d/onvif", ip, port)
+}
+
+// stripPort removes an optional :port suffix from a host string.
+func stripPort(host string) string {
+	if host == "" {
+		return ""
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	return host
 }

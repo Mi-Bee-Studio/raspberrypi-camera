@@ -47,7 +47,8 @@ func testDiscovery() *Discovery {
 func TestBuildProbeMatches(t *testing.T) {
 	d := testDiscovery()
 	msgID := "uuid:12345678-1234-1234-1234-123456789abc"
-	resp := d.buildProbeMatches(msgID)
+	// Empty client IP -> falls back to device's own address (192.168.1.100).
+	resp := d.buildProbeMatches(msgID, "")
 
 	body := string(resp)
 
@@ -96,6 +97,26 @@ func TestBuildProbeMatches(t *testing.T) {
 	// Verify ProbeMatch structure
 	if !strings.Contains(body, "<d:ProbeMatch>") {
 		t.Fatal("missing ProbeMatch element")
+}
+}
+
+func TestBuildProbeMatchesPerClientIP(t *testing.T) {
+	d := testDiscovery()
+	msgID := "uuid:per-client-test"
+
+	// Empty client IP -> device's own fallback.
+	resp := d.buildProbeMatches(msgID, "")
+	if !strings.Contains(string(resp), "192.168.1.100:8080/onvif/device_service") {
+		t.Errorf("expected fallback IP in ProbeMatches, got: %s", resp)
+	}
+
+	// Specific client IP -> echoed in XAddrs.
+	resp = d.buildProbeMatches(msgID, "192.168.63.197")
+	if !strings.Contains(string(resp), "192.168.63.197:8080/onvif/device_service") {
+		t.Errorf("expected client IP in ProbeMatches, got: %s", resp)
+	}
+	if strings.Contains(string(resp), "192.168.1.100") {
+		t.Errorf("ProbeMatches should NOT contain fallback IP when client IP is given, got: %s", resp)
 	}
 }
 
@@ -256,7 +277,7 @@ func TestHandleProbeWithMessageID(t *testing.T) {
 	d := testDiscovery()
 	msgID := "uuid:aaaa-bbbb-cccc-dddd"
 	probeMsg := fmt.Sprintf(nvrProbeTemplate, msgID)
-	resp := d.handleProbe([]byte(probeMsg))
+	resp := d.handleProbe([]byte(probeMsg), "")
 
 	if resp == nil {
 		t.Fatal("handleProbe returned nil for valid probe")
@@ -285,10 +306,12 @@ func TestDiscoveryDefaultsWithEmptyConfig(t *testing.T) {
 	if len(d.scopes) != 2 {
 		t.Fatalf("expected 2 scopes, got %d", len(d.scopes))
 	}
-	if len(d.xAddrs) != 1 {
-		t.Fatalf("expected 1 XAddr, got %d", len(d.xAddrs))
+	xaddrs := d.XAddrs("")
+	if len(xaddrs) != 1 {
+		t.Fatalf("expected 1 XAddr, got %d", len(xaddrs))
 	}
-	if !strings.Contains(d.xAddrs[0], "10.0.0.1") {
-		t.Fatalf("XAddr should contain provided IP, got %s", d.xAddrs[0])
+	if !strings.Contains(xaddrs[0], "10.0.0.1") {
+		t.Fatalf("XAddr should contain provided IP, got %s", xaddrs[0])
 	}
 }
+

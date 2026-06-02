@@ -1,6 +1,7 @@
 package onvif
 
 import (
+	"context"
 	"encoding/xml"
 	"fmt"
 	"net/http"
@@ -61,7 +62,7 @@ func TestGetProfiles(t *testing.T) {
 func TestGetStreamUri(t *testing.T) {
 	cfg := &mockConfig{username: "admin", password: "testpass", port: 8080}
 
-	resp := handleGetStreamUri(cfg)
+	resp := handleGetStreamUri(context.Background(), cfg)
 
 	expected := "rtsp://192.168.1.100:8554/stream"
 	if resp.MediaUri.Uri != expected {
@@ -117,8 +118,12 @@ func TestGetStreamUriRawSOAP(t *testing.T) {
   </s:Body>
 </s:Envelope>`)
 
+	// Simulate the NVR reaching us from a specific address. Per-request IP echo
+	// means the RTSP URL the NVR gets back uses its own source IP, not the
+	// device's. This is the new behavior: "NVR connects from IP X -> rtsp://X:8554/stream".
 	req := httptest.NewRequest(http.MethodPost, "/onvif/media_service", strings.NewReader(soapReq))
 	req.Header.Set("Content-Type", "application/soap+xml")
+	req.RemoteAddr = "192.168.1.100:55123"
 	w := httptest.NewRecorder()
 
 	srv.ServeHTTP(w, req)
@@ -141,7 +146,6 @@ func TestGetStreamUriRawSOAP(t *testing.T) {
 			} `xml:"GetStreamUriResponse"`
 		} `xml:"Body"`
 	}
-
 	if err := xml.Unmarshal(w.Body.Bytes(), &testEnvelope{}); err != nil {
 		// If strict parse fails, try parsing the raw body for Uri content
 		body := w.Body.String()
@@ -151,6 +155,7 @@ func TestGetStreamUriRawSOAP(t *testing.T) {
 		// The URI is in the body but the struct path didn't match — check the XML structure
 		t.Fatalf("failed to parse response with NVR struct (parse error: %v). URI IS in body — XML element path mismatch.\nBody:\n%s", err, body)
 	}
+
 
 	// Strict parse succeeded — also verify via the full struct path
 	var env testEnvelope
@@ -192,6 +197,7 @@ func TestGetStreamUriNoAuth(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/onvif/media_service", strings.NewReader(soapReq))
 	req.Header.Set("Content-Type", "application/soap+xml")
+	req.RemoteAddr = "192.168.1.100:55123"
 	w := httptest.NewRecorder()
 
 	srv.ServeHTTP(w, req)
@@ -203,12 +209,13 @@ func TestGetStreamUriNoAuth(t *testing.T) {
 		t.Fatalf("expected 200 (auth optional for media), got %d. Body: %s", w.Code, w.Body.String())
 	}
 
-	// Verify the response still contains the URI
+	// Verify the response still contains the URI (using NVR's source IP)
 	body := w.Body.String()
 	if !strings.Contains(body, "rtsp://192.168.1.100:8554/stream") {
 		t.Errorf("response should contain RTSP URI even without auth. Body: %s", body)
 	}
 }
+
 
 // ---------------------------------------------------------------------------
 // TestGetProfilesMarshalling — verify XML output is valid and parseable
@@ -288,9 +295,10 @@ func TestGetStreamUriViaHTTPEndToEnd(t *testing.T) {
   </s:Body>
 </s:Envelope>`, digest, nonce, created)
 
-	req := httptest.NewRequest(http.MethodPost, "/onvif/media_service", strings.NewReader(soapReq))
+req := httptest.NewRequest(http.MethodPost, "/onvif/media_service", strings.NewReader(soapReq))
 	req.Header.Set("Content-Type", "application/soap+xml")
-	w := httptest.NewRecorder()
+	req.RemoteAddr = "192.168.1.100:55123"
+w := httptest.NewRecorder()
 
 	srv.ServeHTTP(w, req)
 
@@ -323,6 +331,7 @@ func TestGetStreamUriViaHTTPEndToEnd(t *testing.T) {
 		t.Errorf("expected URI %q, got %q", expectedURI, env.Body.GetStreamUriResponse.MediaUri.URI)
 	}
 }
+
 
 // ---------------------------------------------------------------------------
 // TestGetVideoSourcesViaHTTP — end-to-end test for GetVideoSources
@@ -435,3 +444,69 @@ func TestGetProfilesViaHTTP(t *testing.T) {
 		t.Errorf("expected fps 15, got %d", p.Encoding.FPS)
 	}
 }
+
+// TestGetStreamUriPerRequestIP — verify the RTSP URI reflects the request's source IP.
+// This is the core NVR integration guarantee: "NVR from IP X receives rtsp://X:8554/stream".
+// TestGetStreamUriServerIP — verify the RTSP URI uses the RPi interface IP
+// (server-side), NOT the NVR's source IP. This is the core NVR integration
+// guarantee: "NVR connects to RPi on 192.168.63.162 -> gets back
+// rtsp://192.168.63.162:8554/stream" regardless of which IP the NVR itself has.
+func TestGetStreamUriServerIP(t *testing.T) {
+	cfg := &mockConfig{username: "admin", password: "testpass", port: 8080}
+	srv := New(cfg)
+	RegisterMediaHandlers(srv)
+
+	soapReq := `<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+ xmlns:trt="http://www.onvif.org/ver10/media/wsdl"
+ xmlns:tt="http://www.onvif.org/ver10/schema">
+  <s:Body>
+    <trt:GetStreamUri>
+      <trt:StreamSetup>
+        <tt:Stream>RTP-Unicast</tt:Stream>
+        <tt:Transport><tt:Protocol>RTSP</tt:Protocol></tt:Transport>
+      </trt:StreamSetup>
+      <trt:ProfileToken>main</trt:ProfileToken>
+    </trt:GetStreamUri>
+  </s:Body>
+</s:Envelope>`
+
+	// Each case simulates a different RPi interface accepting the connection
+	// (the server-side local IP), with the NVR coming from a different IP.
+	cases := []struct {
+		name        string
+		serverIP    string // RPi's interface IP (what gets put in RTSP URI)
+		nvrRemoteIP string // NVR's source IP (should be ignored)
+		wantIP      string // expected in the URI
+	}{
+		{"wlan0", "192.168.63.162", "192.168.63.197:55123", "192.168.63.162"},
+		{"eth0_10net", "10.0.0.5", "10.0.0.99:1234", "10.0.0.5"},
+		{"ipv6", "2001:db8::1", "[2001:db8::99]:8080", "2001:db8::1"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/onvif/media_service", strings.NewReader(soapReq))
+			req.Header.Set("Content-Type", "application/soap+xml")
+			req.RemoteAddr = tc.nvrRemoteIP
+			// In production, http.Server.ConnContext does this from conn.LocalAddr().
+			req = req.WithContext(WithServerIP(req.Context(), tc.serverIP))
+
+			w := httptest.NewRecorder()
+			srv.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d", w.Code)
+			}
+			wantURI := fmt.Sprintf("rtsp://%s:8554/stream", tc.wantIP)
+			if !strings.Contains(w.Body.String(), wantURI) {
+				t.Errorf("expected URI %q in response, got body: %s", wantURI, w.Body.String())
+			}
+			// And the NVR's source IP should NOT appear in the URI.
+			if strings.Contains(w.Body.String(), tc.nvrRemoteIP) {
+				t.Errorf("NVR source IP %q should not appear in response, got: %s", tc.nvrRemoteIP, w.Body.String())
+			}
+		})
+	}
+}
+

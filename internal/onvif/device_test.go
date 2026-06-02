@@ -182,8 +182,13 @@ func TestDeviceGetCapabilities(t *testing.T) {
 	srv := New(cfg)
 	RegisterDeviceHandlers(srv, host, info)
 
+	// Simulate the NVR reaching the RPi. In production, http.Server.ConnContext
+	// injects the server-side local IP (the RPi interface that accepted the
+	// connection). In tests, we do that injection manually.
 	req := httptest.NewRequest(http.MethodPost, "/onvif/device_service", strings.NewReader(soapReq))
 	req.Header.Set("Content-Type", "application/soap+xml")
+	req.RemoteAddr = "192.168.63.197:55123"
+	req = req.WithContext(WithServerIP(req.Context(), "192.168.63.162"))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -198,22 +203,51 @@ func TestDeviceGetCapabilities(t *testing.T) {
 	if !strings.Contains(body, "XAddr") {
 		t.Fatalf("response missing XAddr: %s", body)
 	}
-
-	// Verify Media XAddr
-	if !strings.Contains(body, "http://192.168.1.100:8080/onvif/media_service") {
-		t.Errorf("response missing Media XAddr: %s", body)
+	// Verify the RPi interface IP is in all XAddrs (not the NVR's source IP).
+	if !strings.Contains(body, "http://192.168.63.162:8080/onvif/media_service") {
+		t.Errorf("response missing Media XAddr with server IP: %s", body)
 	}
-	// Verify Device XAddr
-	if !strings.Contains(body, "http://192.168.1.100:8080/onvif/device_service") {
-		t.Errorf("response missing Device XAddr: %s", body)
+	if !strings.Contains(body, "http://192.168.63.162:8080/onvif/device_service") {
+		t.Errorf("response missing Device XAddr with server IP: %s", body)
 	}
-	// Verify PTZ XAddr
-	if !strings.Contains(body, "http://192.168.1.100:8080/onvif/ptz_service") {
-		t.Errorf("response missing PTZ XAddr: %s", body)
+	if !strings.Contains(body, "http://192.168.63.162:8080/onvif/ptz_service") {
+		t.Errorf("response missing PTZ XAddr with server IP: %s", body)
 	}
-	// Verify Imaging is present in Capabilities (XAddr will be same as Device)
 	if !strings.Contains(body, "tt:Imaging") {
 		t.Errorf("response missing tt:Imaging in Capabilities: %s", body)
+	}
+}
+
+func TestDeviceGetCapabilitiesFallback(t *testing.T) {
+	// When the request has no client IP (empty RemoteAddr), the device's own
+	// fallbackHost should be used.
+	host := "192.168.1.100:8080"
+	info := DeviceInfo{Name: "Test", HardwareID: "TEST"}
+
+	soapReq := `<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
+  <s:Body>
+    <tds:GetCapabilities xmlns:tds="http://www.onvif.org/ver10/device/wsdl"/>
+  </s:Body>
+</s:Envelope>`
+
+	cfg := &mockConfig{username: "admin", password: "testpass", port: 8080}
+	srv := New(cfg)
+	RegisterDeviceHandlers(srv, host, info)
+
+	req := httptest.NewRequest(http.MethodPost, "/onvif/device_service", strings.NewReader(soapReq))
+	req.Header.Set("Content-Type", "application/soap+xml")
+	req.RemoteAddr = "" // no client IP — must fall back to host
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "http://192.168.1.100:8080/onvif/media_service") {
+		t.Errorf("fallback should use device's own address: %s", body)
 	}
 }
 

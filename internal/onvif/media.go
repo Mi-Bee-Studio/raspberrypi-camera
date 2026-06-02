@@ -123,6 +123,11 @@ type VideoSource struct {
 
 // RegisterMediaHandlers registers all Media service handlers on the ONVIF server.
 // It reads camera and RTSP configuration from the server's ConfigProvider.
+// RegisterMediaHandlers registers all Media service handlers on the ONVIF server.
+// It reads camera and RTSP configuration from the server's ConfigProvider.
+// The RTSP URL returned by GetStreamUri reflects the IP address the NVR used
+// to reach this device — the per-request client IP — so the URL is reachable
+// from the NVR regardless of which interface was used.
 func RegisterMediaHandlers(s *Server) {
 	cfg := s.config
 
@@ -131,7 +136,7 @@ func RegisterMediaHandlers(s *Server) {
 	})
 
 	s.RegisterAction("GetStreamUri", func(ctx context.Context, body []byte, auth *AuthResult) (interface{}, error) {
-		return handleGetStreamUri(cfg), nil
+		return handleGetStreamUri(ctx, cfg), nil
 	})
 
 	s.RegisterAction("GetVideoSources", func(ctx context.Context, body []byte, auth *AuthResult) (interface{}, error) {
@@ -176,8 +181,12 @@ func handleGetProfiles(cfg ConfigProvider) *GetProfilesResponse {
 }
 
 // handleGetStreamUri returns the RTSP stream URL for the given profile.
-func handleGetStreamUri(cfg ConfigProvider) *GetStreamUriResponse {
-	uri := fmt.Sprintf("rtsp://%s:%d/stream", cfg.DeviceIP(), cfg.RTSPPort())
+// The IP portion of the URL is taken from the per-request context (i.e. the
+// NVR's source IP), falling back to cfg.DeviceIP() when no client IP is set
+// (e.g. in unit tests calling this function directly).
+func handleGetStreamUri(ctx context.Context, cfg ConfigProvider) *GetStreamUriResponse {
+	ip := ServerIPFromContext(ctx, cfg.DeviceIP())
+	uri := fmt.Sprintf("rtsp://%s:%d/stream", ip, cfg.RTSPPort())
 
 	return &GetStreamUriResponse{
 		MediaUri: MediaUri{
