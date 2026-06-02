@@ -32,12 +32,14 @@ type Preset struct {
 
 // State manages digital PTZ state with background movement.
 type State struct {
-	mu       sync.RWMutex
-	position Position
-	velocity Velocity
-	presets  map[string]Preset
-	moving   bool
-	cancel   context.CancelFunc
+	mu             sync.RWMutex
+	position       Position
+	velocity       Velocity
+	presets        map[string]Preset
+	moving         bool
+	cancel         context.CancelFunc
+	onPosChange    func(pos Position)
+	onPresetChange func()
 }
 
 // NewState creates a new PTZ state initialized at center position.
@@ -110,7 +112,13 @@ func (s *State) runMovement(ctx context.Context) {
 			// Actually let it continue — ContinuousMove stays active until Stop() is called,
 			// even if at boundary. The position just won't change past the boundary.
 			_ = stopped
+			pos := s.position
+			cb := s.onPosChange
 			s.mu.Unlock()
+
+			if cb != nil {
+				cb(pos)
+			}
 		}
 	}
 }
@@ -166,7 +174,13 @@ func (s *State) runAbsoluteMove(ctx context.Context, start, target Position) {
 			}
 
 			done := s.position == target
+			pos := s.position
+			cb := s.onPosChange
 			s.mu.Unlock()
+
+			if cb != nil {
+				cb(pos)
+			}
 
 			if done {
 				s.mu.Lock()
@@ -183,7 +197,13 @@ func (s *State) runAbsoluteMove(ctx context.Context, start, target Position) {
 	s.position = target
 	s.moving = false
 	s.velocity = Velocity{}
+	pos := s.position
+	cb := s.onPosChange
 	s.mu.Unlock()
+
+	if cb != nil {
+		cb(pos)
+	}
 }
 
 // RelativeMove applies relative movement from current position.
@@ -193,7 +213,13 @@ func (s *State) RelativeMove(delta Velocity) {
 	s.position.Pan = clampf(s.position.Pan+delta.Pan, -1, 1)
 	s.position.Tilt = clampf(s.position.Tilt+delta.Tilt, -1, 1)
 	s.position.Zoom = clampf(s.position.Zoom+delta.Zoom, 0, 1)
+	pos := s.position
+	cb := s.onPosChange
 	s.mu.Unlock()
+
+	if cb != nil {
+		cb(pos)
+	}
 }
 
 // Stop halts all movement immediately.
@@ -233,10 +259,15 @@ func (s *State) GetStatus() string {
 // SetPreset stores current position as a named preset.
 func (s *State) SetPreset(token string, presetName string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.presets[token] = Preset{
 		Name:     presetName,
 		Position: s.position,
+	}
+	cb := s.onPresetChange
+	s.mu.Unlock()
+
+	if cb != nil {
+		cb()
 	}
 	return nil
 }
@@ -269,13 +300,18 @@ func (s *State) GotoPreset(token string) error {
 // RemovePreset deletes a named preset.
 func (s *State) RemovePreset(token string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if _, ok := s.presets[token]; !ok {
+		s.mu.Unlock()
 		return ErrPresetNotFound
 	}
 
 	delete(s.presets, token)
+	cb := s.onPresetChange
+	s.mu.Unlock()
+
+	if cb != nil {
+		cb()
+	}
 	return nil
 }
 
@@ -288,4 +324,34 @@ func (s *State) GetPresetPosition(token string) (Position, error) {
 		return Position{}, ErrPresetNotFound
 	}
 	return preset.Position, nil
+}
+
+// ListPresets returns the full preset list (Name + Position).
+// Unlike GetPresets which returns only tokens for ONVIF compat,
+// this returns complete preset information for the web UI.
+func (s *State) ListPresets() []Preset {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]Preset, 0, len(s.presets))
+	for _, p := range s.presets {
+		out = append(out, p)
+	}
+	return out
+}
+
+// SetOnPositionChange registers a callback invoked whenever the position
+// changes (continuous move tick, absolute move step, relative move, preset goto).
+// The callback is called outside the mutex lock to avoid deadlock.
+func (s *State) SetOnPositionChange(fn func(pos Position)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onPosChange = fn
+}
+
+// SetOnPresetListChange registers a callback invoked when a preset is added
+// or removed. The callback is called outside the mutex lock.
+func (s *State) SetOnPresetListChange(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onPresetChange = fn
 }
