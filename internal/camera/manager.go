@@ -58,13 +58,22 @@ var onvifToCam = map[string]string{
 // ParamManager manages camera parameter changes with range validation.
 // It wraps a Camera instance and validates ranges before forwarding.
 type ParamManager struct {
-	mu  sync.RWMutex
-	cam Camera
+	mu       sync.RWMutex
+	cam      Camera
+	onChange func(name string, value interface{})
 }
 
 // NewParamManager creates a new parameter manager wrapping a Camera.
 func NewParamManager(cam Camera) *ParamManager {
 	return &ParamManager{cam: cam}
+}
+// SetOnChange registers a callback invoked after a successful Set.
+// The callback is called outside the mutex lock to avoid deadlock if the
+// callback re-enters ParamManager. Pass nil to clear.
+func (pm *ParamManager) SetOnChange(fn func(name string, value interface{})) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.onChange = fn
 }
 
 // Set validates and applies a parameter change.
@@ -82,9 +91,17 @@ func (pm *ParamManager) Set(name string, value interface{}) error {
 	}
 
 	pm.mu.Lock()
-	defer pm.mu.Unlock()
+	err := pm.cam.SetParam(camName, value)
+	cb := pm.onChange
+	pm.mu.Unlock()
 
-	return pm.cam.SetParam(camName, value)
+	if err != nil {
+		return err
+	}
+	if cb != nil {
+		cb(name, value)
+	}
+	return nil
 }
 
 // Get returns the current value of a parameter from the camera.
@@ -132,7 +149,6 @@ func (pm *ParamManager) Validate(name string, value interface{}) error {
 
 	return nil
 }
-
 // toFloat64 converts interface{} values to float64 for range comparison.
 func toFloat64(value interface{}) (float64, error) {
 	switch v := value.(type) {
