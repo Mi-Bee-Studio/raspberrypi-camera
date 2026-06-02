@@ -1,14 +1,15 @@
 package onvif
 
 import (
-	"bytes"
-	"context"
-	"encoding/xml"
-	"fmt"
-	"io"
+"bytes"
+"context"
+"encoding/xml"
+"fmt"
+"io"
 	"log"
-	"net/http"
-	"strings"
+	"net"
+"net/http"
+"strings"
 )
 
 // ActionHandler handles a specific ONVIF SOAP action.
@@ -193,9 +194,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = io.NopCloser(bytes.NewReader(data))
 
+	// The server-side local IP is already in r.Context() (set by ConnContext in
+	// Start). It is the RPi interface IP that accepted this connection — the
+	// IP the NVR must use to reach us back. Handlers read it via
+	// ServerIPFromContext; we just use r.Context() here.
+	ctx := r.Context()
+
 	// WS-Discovery probe interception — check before regular SOAP action routing
 	if s.discoveryHandler != nil && bytes.Contains(data, []byte("Probe")) && bytes.Contains(data, []byte("discovery")) {
-		s.discoveryHandler.ServeHTTP(w, r)
+		s.discoveryHandler.ServeHTTP(w, r.WithContext(ctx))
 		return
 	}
 
@@ -221,7 +228,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := handler(r.Context(), bodyContent, &AuthResult{OK: true})
+	result, err := handler(ctx, bodyContent, &AuthResult{OK: true})
 	if err != nil {
 		writeSOAPFault(w, "soap:Receiver", err.Error())
 		return
@@ -238,8 +245,14 @@ func (s *Server) Start(ctx context.Context) error {
 	s.httpServer = &http.Server{
 		Addr:    addr,
 		Handler: s,
+		// ConnContext fires for every accepted connection. We use it to
+		// capture the local IP of the RPi interface that accepted the
+		// connection — this is what the NVR needs in XAddr/RTSP URIs to
+		// reach us back, regardless of which interface the NVR used.
+		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
+			return WithServerIP(ctx, ServerIPFromConn(c))
+		},
 	}
-
 	errCh := make(chan error, 1)
 	go func() {
 		log.Printf("onvif: server starting on %s", addr)
