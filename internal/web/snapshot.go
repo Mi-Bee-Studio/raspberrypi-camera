@@ -1,0 +1,40 @@
+package web
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/onvif"
+)
+
+const snapshotTimeout = 5 * time.Second
+
+// handleGetSnapshot serves a JPEG snapshot from the latest H.264 IDR frame.
+func (s *Server) handleGetSnapshot(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.Snapshot == nil {
+		writeError(w, http.StatusServiceUnavailable, "snapshot not available: snapshot buffer not configured")
+		return
+	}
+
+	au := s.cfg.Snapshot.Latest()
+	if au == nil {
+		writeError(w, http.StatusServiceUnavailable, "snapshot not available: no frame received yet")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), snapshotTimeout)
+	defer cancel()
+
+	jpegData, err := onvif.ConvertIDRToJPEG(ctx, au, "ffmpeg")
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(jpegData)))
+	w.Write(jpegData)
+}

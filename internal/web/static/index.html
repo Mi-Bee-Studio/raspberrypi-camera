@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>rpi-cam</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+    <header class="header">
+        <div class="header-left">
+            <h1 class="logo">rpi-cam</h1>
+        </div>
+        <div class="header-right">
+            <span id="ws-status" class="status-badge disconnected">Disconnected</span>
+        </div>
+    </header>
+
+    <nav class="tabs">
+        <button class="tab active" data-tab="server">Server</button>
+        <button class="tab" data-tab="camera">Camera</button>
+    </nav>
+
+    <main class="main">
+
+        <!-- Server Tab -->
+        <div id="tab-server" class="tab-panel active">
+            <div id="server-config" class="config-grid"></div>
+            <div class="section-actions">
+                <button class="btn btn-primary" id="btn-edit-onvif">Edit ONVIF Credentials</button>
+            </div>
+        </div>
+
+        <!-- Camera Tab -->
+        <div id="tab-camera" class="tab-panel">
+
+            <!-- Snapshot -->
+            <section class="card">
+                <h2 class="card-title">Live Preview</h2>
+                <div class="snapshot-wrap">
+                    <img id="snapshot" class="snapshot-img" alt="Live camera snapshot">
+                    <div id="snapshot-placeholder" class="snapshot-placeholder">No snapshot available</div>
+                </div>
+            </section>
+
+            <!-- Imaging Controls -->
+            <section class="card">
+                <h2 class="card-title">Imaging Controls</h2>
+                <div id="imaging-controls" class="imaging-controls"></div>
+            </section>
+
+            <!-- PTZ Controls -->
+            <section class="card">
+                <h2 class="card-title">PTZ Controls</h2>
+                <div class="ptz-layout">
+                    <div class="ptz-info">
+                        <div class="ptz-field">
+                            <span class="ptz-label">Pan</span>
+                            <span id="ptz-pan" class="ptz-value mono">0.000</span>
+                        </div>
+                        <div class="ptz-field">
+                            <span class="ptz-label">Tilt</span>
+                            <span id="ptz-tilt" class="ptz-value mono">0.000</span>
+                        </div>
+                        <div class="ptz-field">
+                            <span class="ptz-label">Zoom</span>
+                            <span id="ptz-zoom" class="ptz-value mono">0.000</span>
+                        </div>
+                        <div class="ptz-field">
+                            <span class="ptz-label">Status</span>
+                            <span id="ptz-status" class="ptz-value">IDLE</span>
+                        </div>
+                    </div>
+                    <div class="ptz-controls">
+                        <div class="ptz-dpad">
+                            <button class="dpad-btn" data-dir="up" title="Tilt Up">&#9650;</button>
+                            <button class="dpad-btn" data-dir="left" title="Pan Left">&#9664;</button>
+                            <button class="dpad-btn dpad-center" id="btn-ptz-stop" title="Stop">STOP</button>
+                            <button class="dpad-btn" data-dir="right" title="Pan Right">&#9654;</button>
+                            <button class="dpad-btn" data-dir="down" title="Tilt Down">&#9660;</button>
+                        </div>
+                        <div class="ptz-zoom">
+                            <button class="btn btn-sm zoom-btn" data-dir="zoom-in">Zoom +</button>
+                            <button class="btn btn-sm zoom-btn" data-dir="zoom-out">Zoom -</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Presets -->
+            <section class="card">
+                <h2 class="card-title">Presets</h2>
+                <div class="preset-toolbar">
+                    <button class="btn btn-primary btn-sm" id="btn-add-preset">Add Preset</button>
+                </div>
+                <div id="preset-list" class="preset-list">
+                    <p class="empty-msg">No presets defined</p>
+                </div>
+            </section>
+
+        </div>
+
+    </main>
+
+    <!-- ONVIF Credentials Modal -->
+    <div id="modal-overlay" class="modal-overlay hidden">
+        <div class="modal">
+            <h3 class="modal-title">Edit ONVIF Credentials</h3>
+            <div class="form-group">
+                <label class="form-label" for="input-onvif-user">Username</label>
+                <input class="form-input" type="text" id="input-onvif-user" autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="input-onvif-pass">Password</label>
+                <input class="form-input" type="password" id="input-onvif-pass" autocomplete="current-password">
+            </div>
+            <div id="modal-error" class="form-error hidden"></div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" id="btn-save-onvif">Save &amp; Restart</button>
+                <button class="btn" id="btn-cancel-onvif">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Restart Banner -->
+    <div id="restart-banner" class="restart-banner hidden">
+        Restarting service... Page will reload automatically.
+    </div>
+
+    <!-- Error Toast -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
