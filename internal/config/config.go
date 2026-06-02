@@ -36,6 +36,16 @@ type ONVIFConfig struct {
 	Password string `yaml:"password"` // ONVIF WS-UsernameToken password
 }
 
+// WebConfig holds Web UI server settings.
+// The web UI serves a single-page admin panel for ONVIF config and camera params.
+// When Username/Password are empty, the web server reuses the ONVIF credentials.
+type WebConfig struct {
+	Enabled  bool   `yaml:"enabled"`  // Enable Web UI server
+	Port     int    `yaml:"port"`     // Web UI HTTP port
+	Username string `yaml:"username"` // HTTP Basic auth user (empty -> onvif.username)
+	Password string `yaml:"password"` // HTTP Basic auth pass (empty -> onvif.password)
+}
+
 // RTMPConfig holds RTMP push settings.
 type RTMPConfig struct {
 	Enabled bool   `yaml:"enabled"` // Enable RTMP push
@@ -65,6 +75,7 @@ type Config struct {
 	RTMP    RTMPConfig    `yaml:"rtmp"`
 	Device  DeviceConfig  `yaml:"device"`
 	Logging LoggingConfig `yaml:"logging"`
+	Web     WebConfig    `yaml:"web"`
 }
 
 // DefaultConfig returns a Config with all default values.
@@ -106,6 +117,10 @@ func DefaultConfig() *Config {
 		},
 		Logging: LoggingConfig{
 			Level: "info",
+		},
+		Web: WebConfig{
+			Enabled: true,
+			Port:    8088,
 		},
 	}
 }
@@ -158,6 +173,12 @@ func applyEnvOverrides(cfg *Config) {
 	// RTMP section
 	overrideBool("RPICAM_RTMP_ENABLED", &cfg.RTMP.Enabled)
 	overrideString("RPICAM_RTMP_URL", &cfg.RTMP.URL)
+
+	// Web section
+	overrideBool("RPICAM_WEB_ENABLED", &cfg.Web.Enabled)
+	overrideInt("RPICAM_WEB_PORT", &cfg.Web.Port)
+	overrideString("RPICAM_WEB_USERNAME", &cfg.Web.Username)
+	overrideString("RPICAM_WEB_PASSWORD", &cfg.Web.Password)
 
 	// Device section
 	overrideString("RPICAM_DEVICE_NAME", &cfg.Device.Name)

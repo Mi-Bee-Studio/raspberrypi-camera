@@ -84,3 +84,16 @@ device:
 logging:
   # Log level: debug, info, warn, error
   level: "info"
+
+# Web UI settings
+web:
+  # Enable Web UI server (admin panel on port 8088 by default)
+  enabled: true
+
+  # Web UI HTTP port (separate from ONVIF :8080 and RTSP :8554)
+  port: 8088
+
+  # HTTP Basic auth credentials. Leave empty to mirror ONVIF credentials
+  # (i.e. web.Username = onvif.Username, web.Password = onvif.Password).
+  username: ""
+  password: ""
