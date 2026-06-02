@@ -146,22 +146,23 @@ func (s *Server) Port() int {
 // --- gortsplib.ServerHandler interface ---
 
 // OnConnOpen is called when a new RTSP connection is opened.
-func (s *Server) OnConnOpen(_ *gortsplib.ServerHandlerOnConnOpenCtx) {}
+func (s *Server) OnConnOpen(_ *gortsplib.ServerHandlerOnConnOpenCtx) {
+}
 
 // OnConnClose is called when an RTSP connection is closed.
-func (s *Server) OnConnClose(_ *gortsplib.ServerHandlerOnConnCloseCtx) {}
+func (s *Server) OnConnClose(_ *gortsplib.ServerHandlerOnConnCloseCtx) {
+}
 
 // OnSessionOpen is called when a new RTSP session is opened.
-func (s *Server) OnSessionOpen(_ *gortsplib.ServerHandlerOnSessionOpenCtx) {}
+func (s *Server) OnSessionOpen(_ *gortsplib.ServerHandlerOnSessionOpenCtx) {
+}
 
 // OnSessionClose is called when a session is closed.
 func (s *Server) OnSessionClose(_ *gortsplib.ServerHandlerOnSessionCloseCtx) {
 	s.mu.Lock()
-	if s.clientCount > 0 {
-		s.clientCount--
-		if s.clientCount == 0 {
-			s.stopFrameReader()
-		}
+	s.clientCount--
+	if s.clientCount == 0 {
+		s.stopFrameReader()
 	}
 	s.mu.Unlock()
 }
@@ -273,7 +274,6 @@ func (s *Server) stopFrameReader() {
 
 func (s *Server) readFrames(ctx context.Context) {
 	defer s.wg.Done()
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -298,9 +298,21 @@ func (s *Server) processAccessUnit(au h264.AccessUnit) {
 	}
 
 	// Convert NALUs to [][]byte
-	nalus := make([][]byte, 0, len(au.NALUs))
+	nalus := make([][]byte, 0, len(au.NALUs)+2)
+	hasIDR := false
+	hasSPS := false
+	hasPPS := false
 	for _, nalu := range au.NALUs {
 		nalus = append(nalus, nalu.Data)
+		if nalu.IsIDR {
+			hasIDR = true
+		}
+		if nalu.IsSPS {
+			hasSPS = true
+		}
+		if nalu.IsPPS {
+			hasPPS = true
+		}
 	}
 	if len(nalus) == 0 {
 		return
@@ -311,6 +323,28 @@ func (s *Server) processAccessUnit(au h264.AccessUnit) {
 		if nalu.IsSPS || nalu.IsPPS {
 			s.updateFormat(au.NALUs)
 			break
+		}
+	}
+
+	// Inject SPS+PPS before IDR frames that don't already include them.
+	// This ensures late-joining RTSP clients can decode the stream without
+	// waiting for the next keyframe with embedded SPS/PPS.
+	if hasIDR && (!hasSPS || !hasPPS) {
+		s.mu.Lock()
+		spsData := s.h264Format.SPS
+		ppsData := s.h264Format.PPS
+		s.mu.Unlock()
+
+		if spsData != nil && ppsData != nil {
+			injected := make([][]byte, 0, len(nalus)+2)
+			if !hasSPS {
+				injected = append(injected, spsData)
+			}
+			if !hasPPS {
+				injected = append(injected, ppsData)
+			}
+			injected = append(injected, nalus...)
+			nalus = injected
 		}
 	}
 

@@ -25,12 +25,12 @@ rpi-cam is a lightweight Go ONVIF camera service for Raspberry Pi. It provides O
 - **RTSP Streaming** - H.264 video streaming at configurable resolutions and bitrates
 - **RTMP Push** - Stream to cloud services like Aliyun, Twitch, YouTube
 - **WS-Discovery** - Automatic camera discovery on the network
+- **Web Admin UI** - Dark-themed admin panel with live preview, camera controls, and PTZ
 - **Digital PTZ** - Pan/tilt/zoom via software cropping
 - **Camera Controls** - Brightness, contrast, saturation, sharpness adjustment
 - **Snapshot Support** - JPEG snapshots via HTTP endpoint
 - **Low Memory Footprint** - ~15-30MB RAM usage
 - **Cross-Platform Build** - Compile from x86 workstation to aarch64 RPi
-
 ## Quick Start
 
 ```bash
@@ -62,6 +62,9 @@ See `configs/config.example.yaml` for all configuration options. Key settings in
 - `rtsp.port` - RTSP streaming port (8554 default)
 - `onvif.port` - ONVIF HTTP/SOAP port (8080 default)
 - `onvif.username/password` - ONVIF authentication credentials
+- `web.enabled` - Enable Web admin UI (default: true)
+- `web.port` - Web UI HTTP port (8088 default)
+- `onvif.username/password` - ONVIF authentication credentials
 
 Environment variables override any config setting with `RPICAM_` prefix:
 ```bash
@@ -79,6 +82,20 @@ sudo cp deploy/rpi-cam.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now rpi-cam
 ```
+
+## Web Admin UI
+
+The built-in web admin panel provides real-time camera management:
+
+- **Live Preview** - Auto-refreshing JPEG snapshot from the camera
+- **Imaging Controls** - Sliders for brightness, contrast, saturation, sharpness; dropdowns for white balance and exposure mode
+- **PTZ Controls** - Directional pad for continuous movement, zoom buttons, preset management
+- **Server Config** - View all configuration sections, edit ONVIF credentials with save-and-restart
+- **WebSocket** - Real-time parameter and PTZ position updates without polling
+
+Access at `http://<device-ip>:8088/` with ONVIF credentials (HTTP Basic Auth).
+
+The Web UI is embedded in the binary via `//go:embed` — no additional files to deploy.
 
 ## Supported Cameras
 
@@ -104,6 +121,7 @@ flowchart TB
         ONVIF["ONVIF 服务"]
         RTMP["RTMP 推流"]
         CTRL["相机控制"]
+        WEBUI["Web 管理界面"]
     end
 
     subgraph 外部系统
@@ -116,6 +134,7 @@ flowchart TB
     CAP --> RTMP
     RTSP --> ONVIF
     CTRL --> ONVIF
+    WEBUI --> ONVIF
     ONVIF --> NVR
     RTMP --> CLOUD
 ```

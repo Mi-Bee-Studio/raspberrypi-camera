@@ -225,7 +225,6 @@ func (c *RPiCamera) Start(ctx context.Context) error {
 
 	// Send initial config
 	if err := c.confPipe.write(c.params.SerializeCommand()); err != nil {
-		c.cleanup()
 		return fmt.Errorf("send initial config: %w", err)
 	}
 

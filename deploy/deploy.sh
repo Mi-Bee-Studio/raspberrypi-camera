@@ -2,7 +2,9 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-REMOTE="mickey@192.168.63.162"
+# Use REMOTE_HOST env var or command-line argument
+# Usage: ./deploy.sh [user@host]
+REMOTE="${1:-${REMOTE_HOST:-user@your-rpi-host}}"
 REMOTE_DIR="~/rpi-cam"
 
 echo "Building for arm64..."
