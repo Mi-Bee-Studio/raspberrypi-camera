@@ -498,6 +498,7 @@ func mapParamName(name string) (string, bool) {
 		"height":      "Height",
 		"fps":         "FPS",
 		"exposure":    "Exposure",
+		"exposureMode": "Exposure",
 		"gain":        "Gain",
 		"awbMode":     "AWB",
 		"hFlip":       "HFlip",

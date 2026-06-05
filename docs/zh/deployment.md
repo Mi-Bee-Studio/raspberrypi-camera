@@ -13,12 +13,12 @@
 - 最少 905MB 内存
 - 具有 sudo NOPASSWD 权限的用户账户
 - 连接到目标 RPi 的网络访问
+- FFmpeg 安装在设备上（用于 HLS 流媒体和快照）
 
 ### 工作站要求
 - 已安装 Go 1.26+
 - 可访问目标设备的 SSH
 - 具备 SCP 文件传输功能
-
 ## 摄像头捕获依赖
 
 ### mtxrpicam 二进制文件包
@@ -262,11 +262,34 @@ file snapshot.jpg
 # 预期输出：JPEG image data, baseline, precision 8, 1280x720
 ```
 
+### 6. Web UI 访问测试
+```bash
+# 打开 Web 管理面板
+# http://<your-rpi-ip>:8088/
+
+# 使用 ONVIF 凭据登录（或配置的 Web 专用凭据）
+
+# 验证 HLS 实时预览加载（检查浏览器控制台 hls.js 错误）
+
+# 测试快照按钮
+curl -s http://<your-rpi-ip>:8080/snapshot -o snapshot.jpg
+file snapshot.jpg
+# 预期：JPEG 图像数据
+```
+
+> 注意：Web UI 嵌入在二进制文件中 -- 无需部署额外文件。
+
 ### 快速健康检查
 
 ```bash
 # 检查内存使用（目标：总计约 20MB）
 ps -o pid,rss,comm -p $(pgrep -f "rpi-cam|mtxrpicam")
+
+# 检查 Web UI
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8088/
+
+# 检查 HLS 播放列表
+curl -s http://localhost:8088/hls/stream.m3u8 | head -3
 ```
 
 ## 常见问题故障排除

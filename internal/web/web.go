@@ -7,11 +7,13 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/camera"
+	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/hls"
 	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/onvif"
 	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/ptz"
 )
@@ -35,6 +37,7 @@ type Config struct {
 	Params      *camera.ParamManager
 	PTZ         *ptz.State
 	Snapshot    *onvif.SnapshotBuffer
+	HLS         *hls.Server // optional HLS bridge; nil disables /api/hls/*
 	Logger      *log.Logger // nil -> log.Default()
 }
 
@@ -48,6 +51,7 @@ type Server struct {
 
 	username string
 	password string
+	sessions *SessionStore
 }
 
 // New creates a new web server.
@@ -71,6 +75,7 @@ func New(cfg Config) *Server {
 		logger:   logger,
 		username: username,
 		password: password,
+		sessions: NewSessionStore(username, password),
 	}
 }
 
@@ -112,7 +117,7 @@ func (s *Server) Start(ctx context.Context) error {
 	addr := net.JoinHostPort("0.0.0.0", strconv.Itoa(port))
 	s.server = &http.Server{
 		Addr:    addr,
-		Handler: s.authMiddleware(s.mux),
+		Handler: s.mux,
 	}
 
 	errCh := make(chan error, 1)
@@ -151,8 +156,13 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("GET /{$}", s.handleIndex)
 	m.HandleFunc("GET /static/style.css", s.handleStaticFile("static/style.css", "text/css"))
 	m.HandleFunc("GET /static/app.js", s.handleStaticFile("static/app.js", "application/javascript"))
+	m.HandleFunc("GET /static/hls.min.js", s.handleStaticFile("static/hls.min.js", "application/javascript"))
 
-	// API routes — auth required
+	// Auth endpoints — login is public, logout requires auth
+	m.HandleFunc("POST /api/login", s.handleLogin)
+	m.HandleFunc("POST /api/logout", s.authRequired(s.handleLogout))
+
+	// API routes — auth required (bearer token in Authorization header)
 	m.HandleFunc("GET /api/config", s.authRequired(s.handleGetConfig))
 	m.HandleFunc("POST /api/config/onvif", s.authRequired(s.handlePostConfigOnvif))
 	m.HandleFunc("GET /api/camera/params", s.authRequired(s.handleGetCameraParams))
@@ -168,8 +178,10 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("POST /api/ptz/preset/goto", s.authRequired(s.handlePostPTZPresetGoto))
 	m.HandleFunc("DELETE /api/ptz/preset/{token}", s.authRequired(s.handleDeletePTZPreset))
 	m.HandleFunc("GET /api/snapshot", s.authRequired(s.handleGetSnapshot))
+	// HLS live stream — auth required (bearer token)
+	m.HandleFunc("GET /api/hls/{name}", s.authRequired(s.handleHLS))
 
-	// WebSocket — auth required
+	// WebSocket — auth via ?token= query string
 	m.HandleFunc("GET /ws", s.authRequired(s.handleWS))
 }
 
@@ -232,6 +244,32 @@ func (s *Server) handleStaticFile(path, contentType string) http.HandlerFunc {
 		w.Header().Set("Content-Type", contentType)
 		w.Write(data)
 	}
+}
+
+// handleHLS serves HLS playlist (.m3u8) and segment (.ts) files from
+// the HLS server's output directory. Path traversal is prevented by
+// validation + filepath.Join cleaning.
+func (s *Server) handleHLS(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.HLS == nil {
+		http.Error(w, "hls not enabled", http.StatusNotFound)
+		return
+	}
+	name := r.PathValue("name")
+	if name == "" || strings.Contains(name, "..") || strings.ContainsAny(name, "/\\") {
+		http.Error(w, "invalid name", http.StatusBadRequest)
+		return
+	}
+	fullPath := filepath.Join(s.cfg.HLS.OutputDir(), name)
+	// Set explicit content-type for HLS mime types — Go's mime map doesn't
+	// include .ts and would sniff the file as text otherwise.
+	switch filepath.Ext(name) {
+	case ".m3u8":
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+	case ".ts":
+		w.Header().Set("Content-Type", "video/mp2t")
+	}
+w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+http.ServeFile(w, r, fullPath)
 }
 
 // extractPresetToken extracts the token from the URL path /api/ptz/preset/{token}.

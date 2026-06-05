@@ -44,7 +44,7 @@ var onvifToCam = map[string]string{
 	"Contrast":     "contrast",
 	"Saturation":   "saturation",
 	"Sharpness":    "sharpness",
-	"ExposureTime": "exposure",
+	"ExposureTime": "shutter",
 	"Gain":         "gain",
 	"Width":        "width",
 	"Height":       "height",

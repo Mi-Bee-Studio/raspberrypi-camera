@@ -122,11 +122,13 @@ func (sb *SnapshotBuffer) Available() bool {
 // The frameSource channel feeds buf with incoming H.264 access units.
 func RegisterSnapshotHandlers(s *Server, buf *SnapshotBuffer, frameSource <-chan h264.AccessUnit) {
 	// Feed buffer from frame source in background goroutine.
-	go func() {
-		for au := range frameSource {
-			buf.Feed(au)
-		}
-	}()
+	if frameSource != nil {
+		go func() {
+			for au := range frameSource {
+				buf.Feed(au)
+			}
+		}()
+	}
 
 	s.RegisterAction("GetSnapshotUri", func(ctx context.Context, body []byte, auth *AuthResult) (interface{}, error) {
 		return handleGetSnapshotUri(ctx, s.config), nil

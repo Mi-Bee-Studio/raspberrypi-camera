@@ -17,8 +17,10 @@ camera:        # 摄像头捕获设置
 rtsp:          # RTSP 流媒体服务器
 onvif:         # ONVIF 设备服务
 rtmp:          # RTMP 推送流媒体
+web:           # Web UI 配置
 device:        # 设备标识
 logging:       # 日志配置
+
 ```
 
 ## 配置部分
@@ -96,6 +98,25 @@ onvif:
   # ONVIF 密码（生产环境必须设置）
   password: ""
 ```
+
+### Web UI 配置
+
+Web UI 设置用于内置的浏览器管理面板，提供实时预览、PTZ 控制和摄像头配置功能。
+
+```yaml
+web:
+  # 启用 Web 管理界面（默认：true）
+  enabled: true
+
+  # Web UI HTTP 端口（默认：8088）
+  port: 8088
+
+  # Web UI 身份验证
+  # 当用户名/密码为空时使用 ONVIF 凭据
+  username: "admin"
+  password: ""
+```
+
 
 ### RTMP 配置
 
@@ -182,6 +203,10 @@ logging:
 | | hardware_id | `"OV5647"` | string | 硬件标识符 |
 | | serial_number | `""` | string | 设备序列号 |
 | **logging** | level | `"info"` | string | 日志级别 |
+  | **web** | enabled | `true` | bool | 启用 Web UI |
+  | | port | `8088` | int | Web UI HTTP 端口 |
+  | | username | `""` | string | Web UI 用户名（默认使用 onvif.username） |
+  | | password | `""` | string | Web UI 密码（默认使用 onvif.password） |
 
 ## 环境变量覆盖
 
@@ -202,7 +227,19 @@ RPICAM_ONVIF_PASSWORD=securepassword123 ./rpi-cam
 RPICAM_RTSP_PORT=554 ./rpi-cam
 
 # 启用调试日志
+
 RPICAM_LOGGING_LEVEL=debug ./rpi-cam
+
+# Web UI 访问和凭据
+RPICAM_WEB_ENABLED=true ./rpi-cam
+
+# 设置 Web UI 凭据（独立于 ONVIF）
+RPICAM_WEB_USERNAME=admin RPICAM_WEB_PASSWORD=webpass ./rpi-cam
+# 为生产环境设置 ONVIF 密码
+RPICAM_ONVIF_PASSWORD=securepassword123 ./rpi-cam
+# 设置设备信息
+RPICAM_DEVICE_NAME="Office Camera" ./rpi-cam
+```
 
 # 设置设备信息
 RPICAM_DEVICE_NAME="Office Camera" ./rpi-cam
@@ -238,6 +275,10 @@ RPICAM_DEVICE_NAME="Office Camera" ./rpi-cam
 | | hardware_id | `RPICAM_DEVICE_HARDWAREID` |
 | | serial_number | `RPICAM_DEVICE_SERIALNUMBER` |
 | **logging** | level | `RPICAM_LOGGING_LEVEL` |
+  | **web** | enabled | `RPICAM_WEB_ENABLED` |
+  | | port | `RPICAM_WEB_PORT` |
+  | | username | `RPICAM_WEB_USERNAME` |
+  | | password | `RPICAM_WEB_PASSWORD` |
 
 ## 示例配置
 
@@ -280,6 +321,14 @@ device:
 
 logging:
   level: "info"
+
+web:
+  enabled: true
+  port: 8088
+  username: "admin"
+  password: ""
+```
+  level: "info"
 ```
 
 ### 高分辨率配置
@@ -307,6 +356,19 @@ onvif:
   password: "onvif123"
 
 device:
+  name: "HD Security Camera"
+  manufacturer: "Raspberry Pi"
+  model: "OV5647"
+  firmware: "2.0.0"
+  hardware_id: "OV5647-HD"
+  serial_number: "SN-2024-001"
+
+web:
+  enabled: true
+  port: 8088
+  username: "admin"
+  password: ""
+```
   name: "HD Security Camera"
   manufacturer: "Raspberry Pi"
   model: "OV5647"
@@ -347,6 +409,13 @@ device:
 
 logging:
   level: "warn"
+
+web:
+  enabled: true
+  port: 8088
+  username: "admin"
+  password: ""
+
 ```
 
 ### 低带宽配置
@@ -380,7 +449,15 @@ device:
   hardware_id: "OV5647-LBW"
 
 logging:
+
   level: "error"
+
+web:
+  enabled: true
+  port: 8088
+  username: "admin"
+  password: ""
+```
 ```
 
 ## 配置提示
@@ -398,4 +475,7 @@ logging:
 6. **环境变量**：使用环境变量存储像密码这样的敏感数据，避免将它们存储在配置文件中。
 
 7. **验证**：服务将根据硬件约束验证配置值。无效的设置将被记录或设置为默认值。
-8. **摄像头二进制文件**：`bin_path` 必须指向有效的 mtxrpicam 二进制文件。该文件所在目录还必须包含捆绑的 libcamera 共享库（libcamera.so.9.9、libcamera-base.so.9.9）和 IPA 模块。详见部署文档。
+
+8. **Web UI 访问**：Web 管理面板可通过 http://<设备-ip>:8088/ 访问。使用 ONVIF 凭据（如果配置了特定的 Web 凭据则使用 Web 凭据）登录。
+
+9. **摄像头二进制文件**：`bin_path` 必须指向有效的 mtxrpicam 二进制文件。该文件所在目录还必须包含捆绑的 libcamera 共享库（libcamera.so.9.9、libcamera-base.so.9.9）和 IPA 模块。详见部署文档。

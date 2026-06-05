@@ -17,6 +17,7 @@ camera:        # Camera capture settings
 rtsp:          # RTSP streaming server
 onvif:         # ONVIF device services
 rtmp:          # RTMP push streaming
+web:           # Web UI configuration
 device:        # Device identification
 logging:       # Logging configuration
 ```
@@ -95,7 +96,28 @@ onvif:
   
   # ONVIF password (MUST be set for production)
   password: ""
+
 ```
+
+### Web UI Configuration
+
+Web UI settings for the built-in browser-based admin panel with live preview, PTZ controls, and camera configuration.
+
+```yaml
+web:
+  # Enable Web admin UI (default: true)
+  enabled: true
+
+  # Web UI HTTP port (default: 8088)
+  port: 8088
+
+  # Web UI authentication
+  # Uses ONVIF credentials when username/password are empty
+  username: "admin"
+  password: ""
+```
+
+
 
 ### RTMP Configuration
 
@@ -181,7 +203,11 @@ logging:
 | | firmware | `"1.0.0"` | string | Firmware version |
 | | hardware_id | `"OV5647"` | string | Hardware identifier |
 | | serial_number | `""` | string | Device serial number |
-| **logging** | level | `"info"` | string | Log level |
+| **web** | enabled | `true` | bool | Enable Web UI |
+  | | port | `8088` | int | Web UI HTTP port |
+  | | username | `""` | string | Web UI username (defaults to onvif.username) |
+  | | password | `""` | string | Web UI password (defaults to onvif.password) |
+  | **logging** | level | `"info"` | string | Log level |
 
 ## Environment Variable Overrides
 
@@ -204,6 +230,14 @@ RPICAM_RTSP_PORT=554 ./rpi-cam
 
 # Enable debug logging
 RPICAM_LOGGING_LEVEL=debug ./rpi-cam
+
+# Web UI access and credentials
+RPICAM_WEB_ENABLED=true ./rpi-cam
+
+# Set web UI credentials (separate from ONVIF)
+RPICAM_WEB_USERNAME=admin RPICAM_WEB_PASSWORD=webpass ./rpi-cam
+# Set ONVIF password for production
+RPICAM_ONVIF_PASSWORD=securepassword123 ./rpi-cam
 
 # Set device information
 RPICAM_DEVICE_NAME="Office Camera" ./rpi-cam
@@ -238,7 +272,10 @@ RPICAM_DEVICE_NAME="Office Camera" ./rpi-cam
 | | firmware | `RPICAM_DEVICE_FIRMWARE` |
 | | hardware_id | `RPICAM_DEVICE_HARDWAREID` |
 | | serial_number | `RPICAM_DEVICE_SERIALNUMBER` |
-| **logging** | level | `RPICAM_LOGGING_LEVEL` |
+| **web** | enabled | `RPICAM_WEB_ENABLED` |
+  | | port | `RPICAM_WEB_PORT` |
+  | | username | `RPICAM_WEB_USERNAME` |
+  | | password | `RPICAM_WEB_PASSWORD` |
 
 ## Example Configurations
 
@@ -282,6 +319,13 @@ device:
 
 logging:
   level: "info"
+
+web:
+  enabled: true
+  port: 8088
+  username: "admin"
+  password: ""
+
 ```
 
 ### High-Resolution Configuration
@@ -316,8 +360,14 @@ device:
   firmware: "2.0.0"
   hardware_id: "OV5647-HD"
   serial_number: "SN-2024-001"
-```
 
+web:
+  enabled: true
+  port: 8088
+  username: "admin"
+  password: ""
+
+device:
 ### Cloud Streaming Configuration
 
 ```yaml
@@ -351,8 +401,14 @@ device:
 
 logging:
   level: "warn"
-```
 
+web:
+  enabled: true
+  port: 8088
+  username: "admin"
+  password: ""
+
+rtmp:
 ### Low-Bandwidth Configuration
 
 ```yaml
@@ -386,8 +442,14 @@ device:
 
 logging:
   level: "error"
-```
 
+web:
+  enabled: true
+  port: 8088
+  username: "admin"
+  password: ""
+
+device:
 ## Configuration Tips
 
 1. **Camera Compatibility**: Not all resolutions and settings work with all camera modules. Test your configuration with your specific camera hardware.
@@ -404,4 +466,7 @@ logging:
 
 7. **Validation**: The service will validate configuration values against hardware constraints. Invalid settings will be logged or defaulted.
 
+8. **Web UI Access**: The web admin panel is available at http://<device-ip>:8088/. Use ONVIF credentials (or web-specific credentials if configured) to log in.
+
+9. **Camera Binary**: The `bin_path` must point to a valid mtxrpicam binary. The directory containing this binary must also contain the bundled libcamera shared libraries (libcamera.so.9.9, libcamera-base.so.9.9) and IPA modules. See deployment documentation for details.
 8. **Camera Binary**: The `bin_path` must point to a valid mtxrpicam binary. The directory containing this binary must also contain the bundled libcamera shared libraries (libcamera.so.9.9, libcamera-base.so.9.9) and IPA modules. See deployment documentation for details.

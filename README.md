@@ -28,10 +28,11 @@ rpi-cam is a lightweight Go ONVIF camera service for Raspberry Pi. It provides O
 - **Web Admin UI** - Dark-themed admin panel with live preview, camera controls, and PTZ
 - **Digital PTZ** - Pan/tilt/zoom via software cropping
 - **Camera Controls** - Brightness, contrast, saturation, sharpness adjustment
+- **HLS Live Streaming** - H.264 video via ffmpeg RTSP→HLS for browser playback
+- **i18n Support** - English/Chinese web UI
 - **Snapshot Support** - JPEG snapshots via HTTP endpoint
 - **Low Memory Footprint** - ~15-30MB RAM usage
 - **Cross-Platform Build** - Compile from x86 workstation to aarch64 RPi
-## Quick Start
 
 ```bash
 # Clone and build
@@ -85,18 +86,20 @@ sudo systemctl enable --now rpi-cam
 
 ## Web Admin UI
 
-The built-in web admin panel provides real-time camera management:
+The built-in web admin panel provides real-time camera management with modern streaming capabilities:
 
-- **Live Preview** - Auto-refreshing JPEG snapshot from the camera
+- **Live Preview** - HLS video player (hls.js library) for smooth browser playback
 - **Imaging Controls** - Sliders for brightness, contrast, saturation, sharpness; dropdowns for white balance and exposure mode
 - **PTZ Controls** - Directional pad for continuous movement, zoom buttons, preset management
 - **Server Config** - View all configuration sections, edit ONVIF credentials with save-and-restart
 - **WebSocket** - Real-time parameter and PTZ position updates without polling
+- **Language Toggle** - Switch between English and Chinese interfaces
+- **Theme Toggle** - Dark/light mode switching
+- **Snapshot Button** - One-click JPEG capture
 
-Access at `http://<device-ip>:8088/` with ONVIF credentials (HTTP Basic Auth).
+Access at `http://<device-ip>:8088/` with web UI credentials (token-based login). Web UI defaults reuse ONVIF credentials.
 
 The Web UI is embedded in the binary via `//go:embed` — no additional files to deploy.
-
 ## Supported Cameras
 
 | Module | Sensor | Resolution | Focus | DT Overlay | Notes |
@@ -118,6 +121,7 @@ flowchart TB
     subgraph rpi-cam
         CAP["相机捕获"]
         RTSP["RTSP 服务器"]
+        HLS["HLS 桥接"]
         ONVIF["ONVIF 服务"]
         RTMP["RTMP 推流"]
         CTRL["相机控制"]
@@ -133,12 +137,13 @@ flowchart TB
     CAP --> RTSP
     CAP --> RTMP
     RTSP --> ONVIF
+    RTSP --> HLS
+    HLS --> WEBUI
     CTRL --> ONVIF
     WEBUI --> ONVIF
     ONVIF --> NVR
     RTMP --> CLOUD
 ```
-
 Camera capture via CSI interface supports OV5647, IMX219, IMX708, IMX477 modules. RTSP server uses `gortsplib` (same as MediaMTX). ONVIF provides device discovery, media control, PTZ operations and imaging parameter adjustment. RTMP push supports cloud services.
 
 ### Performance Comparison
@@ -152,6 +157,7 @@ Camera capture via CSI interface supports OV5647, IMX219, IMX708, IMX477 modules
 | RTMP Push | ✅ Built-in | ❌ Extra config needed | — |
 | CPU Usage (720p@15fps) | ~15% | ~24% | 37% reduction |
 
+*Memory usage includes ~15MB extra for HLS ffmpeg process when active.*
 ### Technology Stack
 
 | Component | Library | Rationale |
@@ -160,8 +166,9 @@ Camera capture via CSI interface supports OV5647, IMX219, IMX708, IMX477 modules
 | RTSP Server | `bluenviron/gortsplib/v5` | Same as MediaMTX, proven compatibility |
 | RTMP Push | `q191201771/lal` | Pure Go, active maintenance, low footprint |
 | Camera Capture | MediaMTX rpicam (subprocess) | Battle-tested libcamera, no CGO |
+| HLS Bridge | `ffmpeg` subprocess | Converts RTSP→HLS for browser playback |
+| Web UI | embedded (no external lib) + hls.js | Lightweight, no external dependencies |
 | Configuration | YAML | Human-readable, easy deployment |
-
 Built with pure Go — **zero CGO**. Camera capture uses MediaMTX's existing mtxrpicam binary via subprocess pipe for proven CSI camera support, without the CGO cross-compile pain.
 
 ## Development

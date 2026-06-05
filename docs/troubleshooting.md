@@ -14,13 +14,20 @@ systemctl status rpi-cam
 ls -la /dev/video0
 
 # Check network connectivity
-netstat -tlnp | grep -E '8554|8080|3702'
+netstat -tlnp | grep -E '8554|8080|3702|8088'
 
 # Check memory usage
 free -h
 
 # Check CPU usage
 top -bn1 | head -20
+
+# Check web UI
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8088/
+# Expected: 200 or 302 (login redirect)
+
+# Check HLS stream
+curl -s http://localhost:8088/hls/stream.m3u8 | head -5
 ```
 
 # Check camera encoder is working (look for x264 in logs)
@@ -72,6 +79,37 @@ vcgencmd get_camera
      device: "/dev/video0"  # or your camera device
    ```
 
+## Web UI Login Issues
+
+### Symptoms
+- Login page shows but credentials don't work
+- "Invalid credentials" error on login
+- Cannot access web admin panel
+
+### Diagnosis
+```bash
+# Check web UI is running
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8088/
+
+# Check auth endpoint
+curl -s -X POST http://localhost:8088/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"test"}'
+
+# Check credentials in config
+grep -A2 'web:' config.yaml
+```
+
+### Solutions
+1. **Default credentials**: Web UI defaults to ONVIF credentials when web.username/web.password are empty. Set explicit web credentials:
+   ```yaml
+   web:
+     username: "admin"
+     password: "your-password"
+   ```
+2. **Clear browser cache**: Token-based auth stores session in localStorage. Clear browser data for the site.
+3. **Check config**: Ensure web.enabled: true in config.yaml
+4. **Restart service**: sudo systemctl restart rpi-cam
 ## Camera Encoder Issues
 
 ### Symptoms
@@ -318,6 +356,45 @@ curl -s -w "\nHTTP Status: %{http_code}\n" http://localhost:8080/snapshot -o /de
      width: 1280
      height: 720
    ```
+## HLS Live Preview Issues
+
+### Symptoms
+- Web UI shows black video player
+- "HLS not available" message in web UI
+- Browser console shows hls.js errors
+- No .m3u8 or .ts files in /tmp/hls-rpi-cam/
+
+### Diagnosis
+```bash
+# Check HLS output directory
+ls -la /tmp/hls-rpi-cam/
+# Expected: stream.m3u8 + seg-*.ts files
+
+# Check ffmpeg process
+ps aux | grep ffmpeg
+
+# Check HLS HTTP endpoint
+curl -s http://localhost:8088/hls/stream.m3u8
+
+# Check rpi-cam logs for HLS errors
+journalctl -u rpi-cam --grep "HLS"
+```
+
+### Solutions
+1. **ffmpeg not installed**: Install ffmpeg:
+   ```bash
+   sudo apt install ffmpeg
+   ```
+2. **RTSP source unavailable**: Ensure RTSP stream is working first:
+   ```bash
+   ffprobe rtsp://localhost:8554/stream
+   ```
+3. **HLS server not started**: Check rpi-cam logs for "warning: HLS bridge not started"
+4. **Restart rpi-cam**: sudo systemctl restart rpi-cam
+5. **Check disk space**: /tmp must have free space for HLS segments:
+   ```bash
+   df -h /tmp
+   ```
 
 ## Performance Issues
 
@@ -362,6 +439,39 @@ ip -s link show wlan0
    # Monitor memory every 5 seconds
    watch -n 5 "free -h && ps aux | grep rpi-cam"
    ```
+
+## Out of Memory (OOM) Issues
+
+### Symptoms
+- rpi-cam or ffmpeg process killed unexpectedly
+- "Killed" in journalctl logs
+- dmesg shows "Out of memory" or "oom-killer"
+- System becomes unresponsive
+
+### Diagnosis
+```bash
+# Check for OOM kills
+dmesg | grep -i "oom\|killed"
+
+# Check memory usage history
+free -h
+
+# Check for memory-hungry processes
+ps aux --sort=-%mem | head -10
+```
+
+### Root Cause
+The Raspberry Pi 3B has only 905MB RAM. If another process consumes excessive memory (e.g. prometheus-node-exporter-collectors' apt_info.py using 124MB), the OOM killer will terminate the largest process, which may be ffmpeg (HLS) or mtxrpicam.
+
+### Solutions
+1. **Check for cron/periodic jobs**: Disable unnecessary timers:
+   ```bash
+   systemctl list-timers | grep -E "apt|collect"
+   sudo systemctl disable --now prometheus-node-exporter-apt.timer
+   ```
+2. **Reduce camera bitrate**: Lower in config.yaml
+3. **Monitor with less memory-intensive tools**: Remove prometheus-node-exporter-collectors if not needed
+4. **Add swap** (last resort): 512MB swap file provides OOM cushion
 
 ## Debug Mode and Logging
 
@@ -438,6 +548,11 @@ error while loading shared libraries: libcamera.so.9.9: cannot open shared objec
 ```
 - Cause: LD_LIBRARY_PATH does not include the deploy/bin/ directory
 - Solution: Set `Environment=LD_LIBRARY_PATH=<deploy-path>/bin` in systemd service
+### HLS Error
+```
+WARNING: HLS bridge not started
+```
+- Solution: Check ffmpeg installation, RTSP source availability
 
 ## System Status Commands
 
@@ -452,6 +567,11 @@ systemctl is-active rpi-cam mediamtx
 
 echo "Network:"
 netstat -tlnp | grep -E '8554|8080|3702'
+
+echo "Web UI:"
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8088/
+echo "HLS Status:"
+ls /tmp/hls-rpi-cam/stream.m3u8 2>/dev/null && echo "HLS active" || echo "HLS inactive"
 
 echo "Memory:"
 free -h

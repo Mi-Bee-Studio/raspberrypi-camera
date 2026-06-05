@@ -15,7 +15,7 @@ rpi-cam is a lightweight Go application providing ONVIF-compliant camera service
 └───────────────────────┬───────────────────────────────────────┘
                        │
 ┌───────────────────────▼───────────────────────────────────────┐
-│                ONVIF Server                                │
+│                 ONVIF Server                                │
 │              (internal/onvif/server.go)                     │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐│
 │  │ Device Service  │  │ Media Service  │  │ PTZ Service    ││
@@ -40,12 +40,25 @@ rpi-cam is a lightweight Go application providing ONVIF-compliant camera service
 │                        Frame Fan-out                        │
 └───────────────────────┬───────────────────────────────────────┘
                        │
-           ┌────────────┼────────────┐
-           │            │            │
-    ┌──────▼────┐  ┌────▼────┐  ┌────▼────┐
-    │ RTSP Server│  │Snapshot │  │RTMP Push│
-    │            │  │Handler  │  │         │
-    └────────────┘  └─────────┘  └─────────┘
+          ┌──────────────┼──────────────┐
+          │              │              │
+┌────────▼────────┐ ┌────▼─────┐ ┌────▼────────┐
+│ RTSP Server     │ │Snapshot │ │ RTMP Push   │
+│ (gortsplib v5)  │ │Handler  │ │             │
+└─────────────────┘ └──────────┘ └─────────────┘
+          │                       
+          ▼                       
+┌─────────────────────────────────────────────────────────────┐
+│                 HLS Server                                │
+│              (internal/hls/server.go)                     │
+│     RTSP → HLS conversion for browser playback              │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                 Web UI Server                            │
+│              (internal/web/web.go)                        │
+│     Admin panel with video player, controls, monitoring    │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Key Components
@@ -96,7 +109,7 @@ Consumers include:
 - RTSP server for video streaming
 - Snapshot handler for JPEG capture
 - RTMP push for cloud services
-
+- **HLS server (via RTSP)**: ffmpeg subprocess converts RTSP to HLS segments
 ### RTSP Server (`internal/rtsp/server.go`)
 
 RTSP server built on `gortsplib v5` for H.264 streaming:
@@ -112,8 +125,39 @@ Key features:
 - Client connection management
 - RTP packet encoding and transmission
 - Stream resource cleanup
+### HLS Server (`internal/hls/server.go`)
 
-### Digital PTZ (`internal/ptz/state.go`)
+HLS Server uses ffmpeg subprocess to convert RTSP streams to HLS segments:
+
+- **Subprocess Management**: ffmpeg process with auto-restart on crash
+- **HTTP Serving**: Serves .m3u8 playlist and .ts segments via HTTP endpoints
+- **Configuration**: Configurable segment duration and playlist size
+- **Integration**: Reads RTSP URL from RTSP server output
+- **Optimization**: H.264 segment generation with proper GOP structure for web playback
+
+Key features:
+- HLS media playlist generation with sequence numbers
+- Segmented video files for adaptive streaming
+- HTTP-based delivery to web browsers
+- Support for hls.js player integration
+- Low latency streaming with configurable parameters
+
+### Web UI Server (`internal/web/web.go`)
+
+Web UI Server provides browser-based camera management interface:
+
+- **Authentication**: Token-based auth with login/logout functionality
+- **i18n Support**: English/Chinese language switching
+- **Themes**: Dark/light theme preferences
+- **Video Player**: HLS playback using hls.js library
+- **Camera Controls**: Real-time brightness, contrast, saturation, sharpness adjustment
+- **PTZ Interface**: Directional pad for continuous movement, zoom controls, preset management
+- **Snapshot**: JPEG capture with download capability
+- **Monitoring**: Real-time parameter updates via WebSocket
+- **Server Config**: Configuration viewer and editor with ONVIF credentials management
+
+
+Virtual PTZ implementation with software-based positioning:
 
 Virtual PTZ implementation with software-based positioning:
 
@@ -144,16 +188,17 @@ OV5647 Camera → mtxrpicam → H.264 NALUs → Parser → AUHub → Subscribers
 5. **Streaming**: RTSP server serves video via gortsplib to NVR clients
 6. **Snapshot**: FFmpeg subprocess converts H.264 keyframes to JPEG on demand
 7. **Control**: ONVIF services provide camera control and discovery
-
+8. **HLS**: ffmpeg subprocess consumes RTSP stream, produces HLS segments for browser playback
 ## Resource Usage
 
 Measured on Raspberry Pi 3B at 720p@15fps:
 
-| Process | RSS Memory | Purpose |
-|---------|------------|---------|
-| rpi-cam | ~9MB | Go main process (ONVIF + RTSP + pipeline) |
-| mtxrpicam | ~10MB | Camera capture subprocess |
-| **Total** | **~20MB** | |
+|| Process | RSS Memory | Purpose |
+||---------|------------|---------|
+|| rpi-cam | ~9MB | Go main process (ONVIF + RTSP + pipeline) |
+|| mtxrpicam | ~10MB | Camera capture subprocess |
+|| **ffmpeg (HLS)** | ~15MB | HLS segmenter (exists only when HLS is active) |
+|| **Total** | **~35MB** | |
 
 - **CPU**: ~2% for rpi-cam, ~12% for mtxrpicam at 720p@15fps
 - **Network**: ~2Mbps for 720p@15fps H.264 stream
@@ -166,7 +211,7 @@ Measured on Raspberry Pi 3B at 720p@15fps:
 - **onvif-go**: ONVIF server implementation (indirect dependency via research)
 - **mtxrpicam**: Camera capture subprocess with bundled libcamera (from bluenviron/mediamtx-rpicamera v2.6.0)
 - **FFmpeg**: On-demand JPEG conversion for snapshot endpoint (must be installed on device)
-
+- **ffmpeg**: HLS live streaming RTSP→HLS conversion (already required for snapshot; now used for HLS too)
 ## Deployment Architecture
 
 The system runs as a single systemd service with:
@@ -179,14 +224,17 @@ The system runs as a single systemd service with:
 
 ### Camera Capture Dependencies
 
-| Component | Type | Size | Purpose |
-|-----------|------|------|---------|
-| mtxrpicam | C binary (arm64) | 1.7MB | Camera capture + H.264 encoding |
-| libcamera.so.9.9 | Shared library (bundled) | 5.7MB | Camera framework (from mediamtx-rpicamera) |
-| libcamera-base.so.9.9 | Shared library (bundled) | 140KB | libcamera base support |
-| ipa_module/ipa_rpi_vc4.so | IPA module | 690KB | RPi VC4 image processing |
-| libpisp/backend_default_config.json | Config | 11KB | PiSP backend configuration |
-
+|| Component | Type | Size | Purpose |
+||-----------|------|------|---------|
+|| mtxrpicam | C binary (arm64) | 1.7MB | Camera capture + H.264 encoding |
+|| libcamera.so.9.9 | Shared library (bundled) | 5.7MB | Camera framework (from mediamtx-rpicamera) |
+|| libcamera-base.so.9.9 | Shared library (bundled) | 140KB | libcamera base support |
+|| ipa_module/ipa_rpi_vc4.so | IPA module | 690KB | RPi VC4 image processing |
+|| libpisp/backend_default_config.json | Config | 11KB | PiSP backend configuration |
+|| **ffmpeg (HLS)** | Binary | Executable | RTSP→HLS conversion for browser playback |
+|| **HLS segments** | Files | Variable | HTTP-accessible .m3u8 and .ts files |
 These dependencies are bundled from mediamtx-rpicamera releases and do NOT depend on the system-installed libcamera. This avoids version conflicts between Debian's libcamera (0.7.0) and the version mtxrpicam was compiled against.
+
+- **HLS**: ffmpeg converts RTSP stream to HLS segments for browser playback (Web UI uses hls.js)
 
 This architecture replaces MediaMTX entirely to provide ONVIF compliance while maintaining the proven camera capture and RTSP streaming components.

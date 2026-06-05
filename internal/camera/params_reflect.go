@@ -76,6 +76,10 @@ func setParamValue(p *Params, fieldName string, value interface{}) error {
 		switch v := value.(type) {
 		case bool:
 			fv.SetBool(v)
+		case int:
+			fv.SetBool(v != 0)
+		case float64:
+			fv.SetBool(v != 0)
 		case string:
 			b, err := strconv.ParseBool(v)
 			if err != nil {

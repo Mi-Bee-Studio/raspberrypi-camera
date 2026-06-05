@@ -12,12 +12,12 @@ This guide covers deployment of the rpi-cam ONVIF camera server for Raspberry Pi
 - 905MB RAM minimum
 - User account with sudo NOPASSWD privileges
 - Network connectivity to target RPi
+- FFmpeg installed on device (for HLS streaming and snapshot)
 
 ### Workstation Requirements
 - Go 1.26+ installed
 - SSH access to target device
 - SCP file transfer capability
-
 ## Camera Capture Dependencies
 
 ### mtxrpicam Binary Bundle
@@ -260,11 +260,34 @@ file snapshot.jpg
 # Expected: JPEG image data, baseline, precision 8, 1280x720
 ```
 
+### 6. Web UI Access Test
+```bash
+# Open web admin panel
+# http://<your-rpi-ip>:8088/
+
+# Login with ONVIF credentials (or web-specific credentials if configured)
+
+# Verify HLS live preview loads (check browser console for hls.js errors)
+
+# Test snapshot button
+curl -s http://<your-rpi-ip>:8080/snapshot -o snapshot.jpg
+file snapshot.jpg
+# Expected: JPEG image data
+```
+
+> Note: The web UI is embedded in the binary -- no additional files to deploy.
+
 ### Quick Health Check
 
 ```bash
 # Check memory usage (target: ~20MB total)
 ps -o pid,rss,comm -p $(pgrep -f "rpi-cam|mtxrpicam")
+
+# Check web UI
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8088/
+
+# Check HLS playlist
+curl -s http://localhost:8088/hls/stream.m3u8 | head -3
 ```
 
 ## Troubleshooting Common Issues

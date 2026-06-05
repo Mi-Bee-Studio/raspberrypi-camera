@@ -13,6 +13,7 @@ import (
 	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/camera"
 	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/config"
 	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/h264"
+	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/hls"
 	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/onvif"
 	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/ptz"
 	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/rtmp"
@@ -118,6 +119,7 @@ adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
 	cameraParams.Contrast = float32(cfg.Camera.Contrast)
 	cameraParams.Saturation = float32(cfg.Camera.Saturation)
 	cameraParams.Sharpness = float32(cfg.Camera.Sharpness)
+	cameraParams.IDRPeriod = 15
 	cameraParams.Codec = "hardwareH264"
 	cameraInfo := camera.CameraInfo{
 		Name:         cfg.Device.Name,
@@ -144,6 +146,17 @@ adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
 	// --- Step 2: H264 Parser + AUHub ---
 	parser := h264.NewParser()
 	auHub := h264.NewAUHub()
+
+	// Snapshot: subscribe BEFORE parser goroutine to ensure the first SPS/PPS+IDR
+	// keyframe is captured. The camera sends SPS/PPS only in the initial frame;
+	// all subsequent keyframes contain IDR only.
+	snapshotBuf := onvif.NewSnapshotBuffer()
+	snapshotSub := auHub.Subscribe(ctx)
+	go func() {
+		for au := range snapshotSub.Channel {
+			snapshotBuf.Feed(au)
+		}
+	}()
 
 	go func() {
 		for frame := range cam.Frames() {
@@ -181,6 +194,21 @@ adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
 	}
 	defer rtspServer.Stop()
 
+	// --- Step 3.5: HLS Bridge (ffmpeg RTSP -> HLS for browser playback) ---
+	hlsServer := hls.New(hls.Config{
+		RTSPURL:      fmt.Sprintf("rtsp://127.0.0.1:%d/stream", cfg.RTSP.Port),
+		OutputDir:    "/tmp/hls-rpi-cam",
+		SegmentTime:  1,
+		ListSize:     6,
+		Username:     cfg.RTSP.Username,
+		Password:     cfg.RTSP.Password,
+		RestartOnExit: true,
+	})
+	if err := hlsServer.Start(ctx); err != nil {
+		log.Printf("warning: HLS bridge not started (web preview disabled): %v", err)
+	}
+	defer hlsServer.Stop()
+
 	// --- Step 4: ParamManager + PTZ ---
 	paramManager := camera.NewParamManager(cam)
 	ptzState := ptz.NewState()
@@ -204,10 +232,8 @@ adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
 	onvif.RegisterImagingHandlers(onvifServer, paramManager)
 	onvif.RegisterPTZHandlers(onvifServer, ptzState)
 
-	// Snapshot: second AUHub subscriber
-	snapshotBuf := onvif.NewSnapshotBuffer()
-	snapshotSub := auHub.Subscribe(ctx)
-	onvif.RegisterSnapshotHandlers(onvifServer, snapshotBuf, snapshotSub.Channel)
+	// Snapshot handlers (buffer already fed from AUHub goroutine started in Step 2)
+	onvif.RegisterSnapshotHandlers(onvifServer, snapshotBuf, nil)
 
 	// --- Step 5.5: Web UI Server ---
 	if cfg.Web.Enabled {
@@ -220,6 +246,7 @@ adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
 			Params:      paramManager,
 			PTZ:         ptzState,
 			Snapshot:    snapshotBuf,
+			HLS:         hlsServer,
 		})
 		go func() {
 			if err := webServer.Start(ctx); err != nil {

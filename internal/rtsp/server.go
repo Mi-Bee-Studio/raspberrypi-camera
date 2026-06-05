@@ -383,10 +383,8 @@ func (s *Server) updateFormat(nalus []h264.NALU) {
 	}
 
 	if sps != nil && pps != nil {
-		// Check if already set
-		if s.h264Format.SPS != nil && s.h264Format.PPS != nil {
-			return
-		}
+		s.h264Format.SPS = sps
+		s.h264Format.PPS = pps
 		s.h264Format.SPS = sps
 		s.h264Format.PPS = pps
 

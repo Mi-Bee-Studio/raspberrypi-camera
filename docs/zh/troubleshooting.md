@@ -14,7 +14,8 @@ systemctl status rpi-cam
 ls -la /dev/video0
 
 # 检查网络连接
-netstat -tlnp | grep -E '8554|8080|3702'
+# 检查网络连接
+netstat -tlnp | grep -E '8554|8080|3702|8088'
 
 # 检查内存使用
 free -h
@@ -22,6 +23,13 @@ free -h
 # 检查 CPU 使用
 top -bn1 | head -20
 ```
+
+# 检查 Web UI
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8088/
+# 期望值：200 或 302（登录重定向）
+
+# 检查 HLS 流
+curl -s http://localhost:8088/hls/stream.m3u8 | head -5
 
 # 检查摄像头编码器是否正常工作（日志中应有 x264）
 journalctl -u rpi-cam --since "1 minute ago" | grep -i "x264\|encoder\|h264"
@@ -71,6 +79,37 @@ vcgencmd get_camera
      device: "/dev/video0"  # 或你的相机设备
    ```
 
+## Web UI 登录问题
+
+### 症状
+- 显示登录页面但凭据无效
+- 登录时显示 "Invalid credentials" 错误
+- 无法访问 Web 管理面板
+
+### 诊断
+```bash
+# 检查 Web UI 是否运行中
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8088/
+
+# 检查身份验证端点
+curl -s -X POST http://localhost:8088/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"test"}'
+
+# 检查配置文件中的凭据
+grep -A2 'web:' config.yaml
+```
+
+### 解决方案
+1. **默认凭据**：当 web.username/web.password 为空时，Web UI 默认使用 ONVIF 凭据。设置显式的 Web 凭据：
+   ```yaml
+   web:
+     username: "admin"
+     password: "your-password"
+   ```
+2. **清除浏览器缓存**：基于令牌的身份验证在 localStorage 中存储会话。清除站点的浏览器数据。
+3. **检查配置**：确保 config.yaml 中 web.enabled: true
+4. **重启服务**：sudo systemctl restart rpi-cam
 ## 摄像头编码器问题
 
 ### 症状
@@ -318,6 +357,46 @@ curl -s -w "\nHTTP 状态: %{http_code}\n" http://localhost:8080/snapshot -o /de
      height: 720
    ```
 
+## HLS 实时预览问题
+
+### 症状
+- Web UI 显示黑色视频播放器
+- Web UI 中显示 "HLS not available" 消息
+- 浏览器控制台显示 hls.js 错误
+- /tmp/hls-rpi-cam/ 中没有 .m3u8 或 .ts 文件
+
+### 诊断
+```bash
+# 检查 HLS 输出目录
+ls -la /tmp/hls-rpi-cam/
+# 期望：stream.m3u8 + seg-*.ts 文件
+
+# 检查 ffmpeg 进程
+ps aux | grep ffmpeg
+
+# 检查 HLS HTTP 端点
+curl -s http://localhost:8088/hls/stream.m3u8
+
+# 检查 rpi-cam 日志中的 HLS 错误
+journalctl -u rpi-cam --grep "HLS"
+```
+
+### 解决方案
+1. **未安装 ffmpeg**：安装 ffmpeg：
+   ```bash
+   sudo apt install ffmpeg
+   ```
+2. **RTSP 源不可用**：首先确保 RTSP 流正常工作：
+   ```bash
+   ffprobe rtsp://localhost:8554/stream
+   ```
+3. **HLS 服务器未启动**：检查 rpi-cam 日志中的 "warning: HLS bridge not started"
+4. **重启 rpi-cam**：sudo systemctl restart rpi-cam
+5. **检查磁盘空间**：/tmp 必须有可用空间用于 HLS 段：
+   ```bash
+   df -h /tmp
+   ```
+
 ## 性能问题
 
 ### 症状
@@ -361,6 +440,39 @@ ip -s link show wlan0
    # 每 5 秒监控内存
    watch -n 5 "free -h && ps aux | grep rpi-cam"
    ```
+
+## 内存不足 (OOM) 问题
+
+### 症状
+- rpi-cam 或 ffmpeg 进程被意外终止
+- journalctl 日志中显示 "Killed"
+- dmesg 显示 "Out of memory" 或 "oom-killer"
+- 系统变得无响应
+
+### 诊断
+```bash
+# 检查 OOM 终止事件
+dmesg | grep -i "oom\|killed"
+
+# 检查内存使用历史
+free -h
+
+# 检查内存消耗大的进程
+ps aux --sort=-%mem | head -10
+```
+
+### 根因
+树莓 Pi 3B 只有 905MB RAM。如果另一个进程消耗过多内存（例如 prometheus-node-exporter-collectors 的 apt_info.py 使用 124MB），OOM 杀手会终止最大的进程，这可能是 ffmpeg (HLS) 或 mtxrpicam。
+
+### 解决方案
+1. **检查 cron/周期性任务**：禁用不必要的定时器：
+   ```bash
+   systemctl list-timers | grep -E "apt|collect"
+   sudo systemctl disable --now prometheus-node-exporter-apt.timer
+   ```
+2. **降低摄像头比特率**：在 config.yaml 中降低设置
+3. **使用内存占用少的监控工具**：如果不需要，移除 prometheus-node-exporter-collectors
+4. **添加交换空间**（最后手段）：512MB 交换文件提供 OOM 缓冲
 
 ## 调试模式和日志
 
@@ -437,6 +549,11 @@ error while loading shared libraries: libcamera.so.9.9: cannot open shared objec
 ```
 - 原因：LD_LIBRARY_PATH 未包含 deploy/bin/ 目录
 - 解决方案：在 systemd 服务中设置 `Environment=LD_LIBRARY_PATH=<deploy-path>/bin`
+### HLS 错误
+```
+WARNING: HLS bridge not started
+```
+- 解决方案：检查 ffmpeg 安装，RTSP 源可用性
 
 ## 系统状态命令
 
@@ -451,6 +568,11 @@ systemctl is-active rpi-cam mediamtx
 
 echo "网络："
 netstat -tlnp | grep -E '8554|8080|3702'
+
+echo "Web UI:"
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8088/
+echo "HLS 状态:"
+ls /tmp/hls-rpi-cam/stream.m3u8 2>/dev/null && echo "HLS 活动" || echo "HLS 未活动"
 
 echo "内存："
 free -h
