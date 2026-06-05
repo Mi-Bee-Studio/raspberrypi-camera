@@ -449,8 +449,8 @@ func TestGetProfilesViaHTTP(t *testing.T) {
 // This is the core NVR integration guarantee: "NVR from IP X receives rtsp://X:8554/stream".
 // TestGetStreamUriServerIP — verify the RTSP URI uses the RPi interface IP
 // (server-side), NOT the NVR's source IP. This is the core NVR integration
-// guarantee: "NVR connects to RPi on 192.168.63.162 -> gets back
-// rtsp://192.168.63.162:8554/stream" regardless of which IP the NVR itself has.
+// guarantee: "NVR connects to RPi on 192.168.1.100 -> gets back
+// rtsp://192.168.1.100:8554/stream" regardless of which IP the NVR itself has.
 func TestGetStreamUriServerIP(t *testing.T) {
 	cfg := &mockConfig{username: "admin", password: "testpass", port: 8080}
 	srv := New(cfg)
@@ -479,7 +479,7 @@ func TestGetStreamUriServerIP(t *testing.T) {
 		nvrRemoteIP string // NVR's source IP (should be ignored)
 		wantIP      string // expected in the URI
 	}{
-		{"wlan0", "192.168.63.162", "192.168.63.197:55123", "192.168.63.162"},
+		{"wlan0", "192.168.1.100", "192.168.1.101:55123", "192.168.1.100"},
 		{"eth0_10net", "10.0.0.5", "10.0.0.99:1234", "10.0.0.5"},
 		{"ipv6", "2001:db8::1", "[2001:db8::99]:8080", "2001:db8::1"},
 	}

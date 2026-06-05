@@ -111,8 +111,8 @@ func TestBuildProbeMatchesPerClientIP(t *testing.T) {
 	}
 
 	// Specific client IP -> echoed in XAddrs.
-	resp = d.buildProbeMatches(msgID, "192.168.63.197")
-	if !strings.Contains(string(resp), "192.168.63.197:8080/onvif/device_service") {
+	resp = d.buildProbeMatches(msgID, "192.168.1.101")
+	if !strings.Contains(string(resp), "192.168.1.101:8080/onvif/device_service") {
 		t.Errorf("expected client IP in ProbeMatches, got: %s", resp)
 	}
 	if strings.Contains(string(resp), "192.168.1.100") {

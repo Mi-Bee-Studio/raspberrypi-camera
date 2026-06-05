@@ -120,7 +120,7 @@ grep -A2 'web:' config.yaml
 ### 诊断
 ```bash
 # 检查 mtxrpicam 是否能找到 libcamera
-LD_LIBRARY_PATH=/home/mickey/rpi-cam/deploy/bin ldd ~/rpi-cam/deploy/bin/mtxrpicam
+LD_LIBRARY_PATH=/home/pi/rpi-cam/deploy/bin ldd ~/rpi-cam/deploy/bin/mtxrpicam
 # 如果显示 "libcamera.so.9.9 => not found"，说明捆绑库缺失
 
 # 检查捆绑的 libcamera 文件是否存在
@@ -162,7 +162,7 @@ mtxrpicam 二进制文件动态链接的是 `libcamera.so.9.9`，这与系统安
    
    # 如果缺失，编辑服务文件
    sudo systemctl edit rpi-cam --force
-   # 添加：Environment=LD_LIBRARY_PATH=/home/mickey/rpi-cam/deploy/bin
+   # 添加：Environment=LD_LIBRARY_PATH=/home/pi/rpi-cam/deploy/bin
    sudo systemctl daemon-reload
    sudo systemctl restart rpi-cam
    ```

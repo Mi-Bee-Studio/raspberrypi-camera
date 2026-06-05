@@ -57,9 +57,9 @@ func TestServerIPFromConn(t *testing.T) {
 	}
 
 	// Real TCPAddr
-	conn := &fakeConn{addr: &net.TCPAddr{IP: net.ParseIP("192.168.63.162"), Port: 8080}}
-	if got := ServerIPFromConn(conn); got != "192.168.63.162" {
-		t.Errorf("ServerIPFromConn = %q, want 192.168.63.162", got)
+	conn := &fakeConn{addr: &net.TCPAddr{IP: net.ParseIP("192.168.1.100"), Port: 8080}}
+	if got := ServerIPFromConn(conn); got != "192.168.1.100" {
+		t.Errorf("ServerIPFromConn = %q, want 192.168.1.100", got)
 	}
 }
 

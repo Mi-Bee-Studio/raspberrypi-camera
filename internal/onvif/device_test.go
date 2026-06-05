@@ -187,8 +187,8 @@ func TestDeviceGetCapabilities(t *testing.T) {
 	// connection). In tests, we do that injection manually.
 	req := httptest.NewRequest(http.MethodPost, "/onvif/device_service", strings.NewReader(soapReq))
 	req.Header.Set("Content-Type", "application/soap+xml")
-	req.RemoteAddr = "192.168.63.197:55123"
-	req = req.WithContext(WithServerIP(req.Context(), "192.168.63.162"))
+	req.RemoteAddr = "192.168.1.101:55123"
+	req = req.WithContext(WithServerIP(req.Context(), "192.168.1.100"))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -204,13 +204,13 @@ func TestDeviceGetCapabilities(t *testing.T) {
 		t.Fatalf("response missing XAddr: %s", body)
 	}
 	// Verify the RPi interface IP is in all XAddrs (not the NVR's source IP).
-	if !strings.Contains(body, "http://192.168.63.162:8080/onvif/media_service") {
+	if !strings.Contains(body, "http://192.168.1.100:8080/onvif/media_service") {
 		t.Errorf("response missing Media XAddr with server IP: %s", body)
 	}
-	if !strings.Contains(body, "http://192.168.63.162:8080/onvif/device_service") {
+	if !strings.Contains(body, "http://192.168.1.100:8080/onvif/device_service") {
 		t.Errorf("response missing Device XAddr with server IP: %s", body)
 	}
-	if !strings.Contains(body, "http://192.168.63.162:8080/onvif/ptz_service") {
+	if !strings.Contains(body, "http://192.168.1.100:8080/onvif/ptz_service") {
 		t.Errorf("response missing PTZ XAddr with server IP: %s", body)
 	}
 	if !strings.Contains(body, "tt:Imaging") {

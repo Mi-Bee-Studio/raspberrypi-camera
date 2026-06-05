@@ -111,7 +111,7 @@ ssh <your-rpi-user>@<your-rpi-ip> "sudo systemctl daemon-reload"
 ssh <your-rpi-user>@<your-rpi-ip> "sudo systemctl enable rpi-cam"
 ```
 
-> **注意：** systemd 服务单元中设置了 `Environment=LD_LIBRARY_PATH=/home/mickey/rpi-cam/deploy/bin`，以便运行时找到捆绑的 libcamera 库。如果您安装到不同路径，请相应更新服务文件中的此值。
+> **注意：** systemd 服务单元中设置了 `Environment=LD_LIBRARY_PATH=/home/pi/rpi-cam/deploy/bin`，以便运行时找到捆绑的 libcamera 库。如果您安装到不同路径，请相应更新服务文件中的此值。
 
 ### 4. 自动化部署
 

@@ -120,7 +120,7 @@ grep -A2 'web:' config.yaml
 ### Diagnosis
 ```bash
 # Check if mtxrpicam can find libcamera
-LD_LIBRARY_PATH=/home/mickey/rpi-cam/deploy/bin ldd ~/rpi-cam/deploy/bin/mtxrpicam
+LD_LIBRARY_PATH=/home/pi/rpi-cam/deploy/bin ldd ~/rpi-cam/deploy/bin/mtxrpicam
 # If "libcamera.so.9.9 => not found", bundled libs are missing
 
 # Check if bundled libcamera files exist
@@ -162,7 +162,7 @@ The `mtxrpicam` binary is dynamically linked against `libcamera.so.9.9`, which i
    
    # If missing, edit the service file
    sudo systemctl edit rpi-cam --force
-   # Add: Environment=LD_LIBRARY_PATH=/home/mickey/rpi-cam/deploy/bin
+   # Add: Environment=LD_LIBRARY_PATH=/home/pi/rpi-cam/deploy/bin
    sudo systemctl daemon-reload
    sudo systemctl restart rpi-cam
    ```

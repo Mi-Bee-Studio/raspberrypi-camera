@@ -7,10 +7,10 @@ Conflicts=mediamtx.service
 
 [Service]
 Type=simple
-User=mickey
-Environment=LD_LIBRARY_PATH=/home/mickey/rpi-cam/deploy/bin
-WorkingDirectory=/home/mickey/rpi-cam
-ExecStart=/home/mickey/rpi-cam/rpi-cam -config /home/mickey/rpi-cam/config.yaml
+User=pi
+Environment=LD_LIBRARY_PATH=/home/pi/rpi-cam/deploy/bin
+WorkingDirectory=/home/pi/rpi-cam
+ExecStart=/home/pi/rpi-cam/rpi-cam -config /home/pi/rpi-cam/config.yaml
 Restart=always
 RestartSec=5
 

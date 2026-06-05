@@ -33,7 +33,7 @@ func ServerIPFromContext(ctx context.Context, fallback string) string {
 }
 
 // ServerIPFromConn derives the local IP (host portion) from a net.Conn's
-// LocalAddr (e.g. "192.168.63.162:8080" -> "192.168.63.162"). Returns an
+// LocalAddr (e.g. "192.168.1.100:8080" -> "192.168.1.100"). Returns an
 // empty string for nil conns or unparseable addresses.
 func ServerIPFromConn(conn net.Conn) string {
 	if conn == nil {
