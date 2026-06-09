@@ -100,23 +100,21 @@ func TestBuildProbeMatches(t *testing.T) {
 }
 }
 
-func TestBuildProbeMatchesPerClientIP(t *testing.T) {
+func TestBuildProbeMatchesPerHostIP(t *testing.T) {
 	d := testDiscovery()
-	msgID := "uuid:per-client-test"
+	msgID := "uuid:per-host-test"
 
-	// Empty client IP -> device's own fallback.
+	// Empty hostIP -> device's own fallback IP.
 	resp := d.buildProbeMatches(msgID, "")
 	if !strings.Contains(string(resp), "192.168.1.100:8080/onvif/device_service") {
 		t.Errorf("expected fallback IP in ProbeMatches, got: %s", resp)
 	}
 
-	// Specific client IP -> echoed in XAddrs.
-	resp = d.buildProbeMatches(msgID, "192.168.1.101")
-	if !strings.Contains(string(resp), "192.168.1.101:8080/onvif/device_service") {
-		t.Errorf("expected client IP in ProbeMatches, got: %s", resp)
-	}
-	if strings.Contains(string(resp), "192.168.1.100") {
-		t.Errorf("ProbeMatches should NOT contain fallback IP when client IP is given, got: %s", resp)
+	// Explicit server IP (e.g. from ConnContext) -> used in XAddrs.
+	// This happens for HTTP probes where ConnContext captures the server's local IP.
+	resp = d.buildProbeMatches(msgID, "192.168.1.100")
+	if !strings.Contains(string(resp), "192.168.1.100:8080/onvif/device_service") {
+		t.Errorf("expected server IP in ProbeMatches, got: %s", resp)
 	}
 }
 
