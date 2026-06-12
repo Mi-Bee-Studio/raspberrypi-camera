@@ -10,15 +10,15 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/camera"
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/config"
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/h264"
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/hls"
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/onvif"
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/ptz"
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/rtmp"
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/rtsp"
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/web"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/camera"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/config"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/h264"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/hls"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/onvif"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/ptz"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/rtmp"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/rtsp"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/web"
 )
 
 var (
@@ -106,7 +106,7 @@ func main() {
 	defer cancel()
 
 	localIP := detectLocalIP()
-	log.Printf("rpi-cam %s starting (fallback IP %s)", version, localIP)
+	log.Printf("MiBee Eye %s starting (fallback IP %s)", version, localIP)
 adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
 
 	// --- Step 1: Camera ---
@@ -197,7 +197,7 @@ adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
 	// --- Step 3.5: HLS Bridge (ffmpeg RTSP -> HLS for browser playback) ---
 	hlsServer := hls.New(hls.Config{
 		RTSPURL:      fmt.Sprintf("rtsp://127.0.0.1:%d/stream", cfg.RTSP.Port),
-		OutputDir:    "/tmp/hls-rpi-cam",
+		OutputDir:    "/tmp/hls-mibee-eye",
 		SegmentTime:  1,
 		ListSize:     6,
 		Username:     cfg.RTSP.Username,
@@ -283,5 +283,5 @@ adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
 	}
 
 	<-ctx.Done()
-	log.Printf("rpi-cam %s shutting down...", version)
+	log.Printf("MiBee Eye %s shutting down...", version)
 }

@@ -67,7 +67,7 @@ type LoggingConfig struct {
 	Level string `yaml:"level"` // Log level (debug, info, warn, error)
 }
 
-// Config is the top-level configuration for rpi-cam.
+// Config is the top-level configuration for MiBee Eye.
 type Config struct {
 	Camera  CameraConfig  `yaml:"camera"`
 	RTSP    RTSPConfig    `yaml:"rtsp"`
@@ -127,7 +127,7 @@ func DefaultConfig() *Config {
 
 // Load reads a YAML configuration file at path and returns a Config.
 // Values from the file are merged over DefaultConfig().
-// Environment variables with the RPICAM_ prefix override both.
+// Environment variables with the MIBEE_EYE_ prefix override both.
 func Load(path string) (*Config, error) {
 	cfg := DefaultConfig()
 
@@ -145,51 +145,51 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// applyEnvOverrides applies RPICAM_ prefixed environment variables to config fields.
-// Environment variable names follow the pattern RPICAM_<SECTION>_<FIELD>.
+// applyEnvOverrides applies MIBEE_EYE_ prefixed environment variables to config fields.
+// Environment variable names follow the pattern MIBEE_EYE_<SECTION>_<FIELD>.
 func applyEnvOverrides(cfg *Config) {
 	// Camera section
-	overrideString("RPICAM_CAMERA_DEVICE", &cfg.Camera.Device)
-	overrideInt("RPICAM_CAMERA_WIDTH", &cfg.Camera.Width)
-	overrideInt("RPICAM_CAMERA_HEIGHT", &cfg.Camera.Height)
-	overrideInt("RPICAM_CAMERA_FPS", &cfg.Camera.FPS)
-	overrideString("RPICAM_CAMERA_CODEC", &cfg.Camera.Codec)
-	overrideInt("RPICAM_CAMERA_BITRATE", &cfg.Camera.Bitrate)
-	overrideFloat("RPICAM_CAMERA_BRIGHTNESS", &cfg.Camera.Brightness)
-	overrideFloat("RPICAM_CAMERA_CONTRAST", &cfg.Camera.Contrast)
-	overrideFloat("RPICAM_CAMERA_SATURATION", &cfg.Camera.Saturation)
-	overrideFloat("RPICAM_CAMERA_SHARPNESS", &cfg.Camera.Sharpness)
+	overrideString("MIBEE_EYE_CAMERA_DEVICE", &cfg.Camera.Device)
+	overrideInt("MIBEE_EYE_CAMERA_WIDTH", &cfg.Camera.Width)
+	overrideInt("MIBEE_EYE_CAMERA_HEIGHT", &cfg.Camera.Height)
+	overrideInt("MIBEE_EYE_CAMERA_FPS", &cfg.Camera.FPS)
+	overrideString("MIBEE_EYE_CAMERA_CODEC", &cfg.Camera.Codec)
+	overrideInt("MIBEE_EYE_CAMERA_BITRATE", &cfg.Camera.Bitrate)
+	overrideFloat("MIBEE_EYE_CAMERA_BRIGHTNESS", &cfg.Camera.Brightness)
+	overrideFloat("MIBEE_EYE_CAMERA_CONTRAST", &cfg.Camera.Contrast)
+	overrideFloat("MIBEE_EYE_CAMERA_SATURATION", &cfg.Camera.Saturation)
+	overrideFloat("MIBEE_EYE_CAMERA_SHARPNESS", &cfg.Camera.Sharpness)
 
 	// RTSP section
-	overrideInt("RPICAM_RTSP_PORT", &cfg.RTSP.Port)
-	overrideString("RPICAM_RTSP_USERNAME", &cfg.RTSP.Username)
-	overrideString("RPICAM_RTSP_PASSWORD", &cfg.RTSP.Password)
+	overrideInt("MIBEE_EYE_RTSP_PORT", &cfg.RTSP.Port)
+	overrideString("MIBEE_EYE_RTSP_USERNAME", &cfg.RTSP.Username)
+	overrideString("MIBEE_EYE_RTSP_PASSWORD", &cfg.RTSP.Password)
 
 	// ONVIF section
-	overrideInt("RPICAM_ONVIF_PORT", &cfg.ONVIF.Port)
-	overrideString("RPICAM_ONVIF_USERNAME", &cfg.ONVIF.Username)
-	overrideString("RPICAM_ONVIF_PASSWORD", &cfg.ONVIF.Password)
+	overrideInt("MIBEE_EYE_ONVIF_PORT", &cfg.ONVIF.Port)
+	overrideString("MIBEE_EYE_ONVIF_USERNAME", &cfg.ONVIF.Username)
+	overrideString("MIBEE_EYE_ONVIF_PASSWORD", &cfg.ONVIF.Password)
 
 	// RTMP section
-	overrideBool("RPICAM_RTMP_ENABLED", &cfg.RTMP.Enabled)
-	overrideString("RPICAM_RTMP_URL", &cfg.RTMP.URL)
+	overrideBool("MIBEE_EYE_RTMP_ENABLED", &cfg.RTMP.Enabled)
+	overrideString("MIBEE_EYE_RTMP_URL", &cfg.RTMP.URL)
 
 	// Web section
-	overrideBool("RPICAM_WEB_ENABLED", &cfg.Web.Enabled)
-	overrideInt("RPICAM_WEB_PORT", &cfg.Web.Port)
-	overrideString("RPICAM_WEB_USERNAME", &cfg.Web.Username)
-	overrideString("RPICAM_WEB_PASSWORD", &cfg.Web.Password)
+	overrideBool("MIBEE_EYE_WEB_ENABLED", &cfg.Web.Enabled)
+	overrideInt("MIBEE_EYE_WEB_PORT", &cfg.Web.Port)
+	overrideString("MIBEE_EYE_WEB_USERNAME", &cfg.Web.Username)
+	overrideString("MIBEE_EYE_WEB_PASSWORD", &cfg.Web.Password)
 
 	// Device section
-	overrideString("RPICAM_DEVICE_NAME", &cfg.Device.Name)
-	overrideString("RPICAM_DEVICE_MANUFACTURER", &cfg.Device.Manufacturer)
-	overrideString("RPICAM_DEVICE_MODEL", &cfg.Device.Model)
-	overrideString("RPICAM_DEVICE_FIRMWARE", &cfg.Device.Firmware)
-	overrideString("RPICAM_DEVICE_HARDWAREID", &cfg.Device.HardwareID)
-	overrideString("RPICAM_DEVICE_SERIALNUMBER", &cfg.Device.SerialNumber)
+	overrideString("MIBEE_EYE_DEVICE_NAME", &cfg.Device.Name)
+	overrideString("MIBEE_EYE_DEVICE_MANUFACTURER", &cfg.Device.Manufacturer)
+	overrideString("MIBEE_EYE_DEVICE_MODEL", &cfg.Device.Model)
+	overrideString("MIBEE_EYE_DEVICE_FIRMWARE", &cfg.Device.Firmware)
+	overrideString("MIBEE_EYE_DEVICE_HARDWAREID", &cfg.Device.HardwareID)
+	overrideString("MIBEE_EYE_DEVICE_SERIALNUMBER", &cfg.Device.SerialNumber)
 
 	// Logging section
-	overrideString("RPICAM_LOGGING_LEVEL", &cfg.Logging.Level)
+	overrideString("MIBEE_EYE_LOGGING_LEVEL", &cfg.Logging.Level)
 }
 
 func overrideString(envName string, dest *string) {

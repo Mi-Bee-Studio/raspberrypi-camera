@@ -79,7 +79,7 @@ func New(cfg Config) *Server {
 		cfg.FFMpegBin = "ffmpeg"
 	}
 	if cfg.OutputDir == "" {
-		cfg.OutputDir = "/tmp/hls-rpi-cam"
+		cfg.OutputDir = "/tmp/hls-mibee-eye"
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = log.Default()

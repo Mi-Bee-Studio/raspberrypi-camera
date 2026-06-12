@@ -12,10 +12,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/camera"
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/hls"
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/onvif"
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/ptz"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/camera"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/hls"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/onvif"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/ptz"
 )
 
 // OnvifConfigProvider provides read-only access to ONVIF and RTSP configuration.

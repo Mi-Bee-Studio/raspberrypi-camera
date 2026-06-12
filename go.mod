@@ -1,4 +1,4 @@
-module github.com/Mi-Bee-Studio/raspberrypi-camera
+module github.com/Mi-Bee-Studio/mibee-eye-raspi
 
 go 1.26.0
 

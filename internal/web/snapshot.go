@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/onvif"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/onvif"
 )
 
 const snapshotTimeout = 5 * time.Second

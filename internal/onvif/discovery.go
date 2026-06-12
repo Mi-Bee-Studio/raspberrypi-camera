@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 	"github.com/google/uuid"
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/config"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/config"
 )
 
 // WS-Discovery constants.

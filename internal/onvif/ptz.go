@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/ptz"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/ptz"
 )
 
 // ---------------------------------------------------------------------------

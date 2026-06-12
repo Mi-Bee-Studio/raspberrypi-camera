@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/ptz"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/ptz"
 )
 
 // ptzTestServer creates a Server with PTZ handlers and ptz state for testing.

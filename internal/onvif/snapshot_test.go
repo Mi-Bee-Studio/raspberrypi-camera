@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/h264"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/h264"
 )
 // ---------------------------------------------------------------------------
 // Unit tests — response builders

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/config"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/config"
 )
 
 // NVR probe template (matches NVR's wsDiscoveryProbe with 2005/04 namespace).

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/h264"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/h264"
 )
 
 // GetSnapshotUriResponse is the ONVIF GetSnapshotUri SOAP response.

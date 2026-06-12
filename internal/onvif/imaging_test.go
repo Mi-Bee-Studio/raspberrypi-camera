@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/camera"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/camera"
 )
 
 // mockImagingCamera is a test double that records SetParam calls for imaging tests.

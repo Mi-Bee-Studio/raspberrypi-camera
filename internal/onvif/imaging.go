@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/camera"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/camera"
 )
 
 // ---------------------------------------------------------------------------

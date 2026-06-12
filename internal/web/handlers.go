@@ -8,8 +8,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/camera"
-	"github.com/Mi-Bee-Studio/raspberrypi-camera/internal/ptz"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/camera"
+	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/ptz"
 
 	"gopkg.in/yaml.v3"
 )
