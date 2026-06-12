@@ -16,8 +16,9 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
-	"golang.org/x/sys/unix"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // Frame represents a single captured video frame.
@@ -48,7 +49,7 @@ type Camera interface {
 	Stop() error
 
 	// Frames returns a read-only channel that receives captured frames.
-	// The channel is closed when Stop() is called or on error.
+	// The channel is closed when Stop() is called.
 	Frames() <-chan Frame
 
 	// SetParam changes a camera parameter at runtime.
@@ -66,20 +67,27 @@ type Camera interface {
 
 // RPiCamera implements Camera by spawning the mtxrpicam subprocess
 // and communicating via the binary pipe protocol.
+// If the subprocess dies, it is automatically restarted with exponential
+// backoff (1s → 30s max).
 type RPiCamera struct {
-	mu      sync.RWMutex
-	params  Params
-	info    CameraInfo
+	mu     sync.RWMutex
+	params Params
+	info   CameraInfo
 
 	// subprocess management
 	cmd       *exec.Cmd
 	confPipe  *pipe // config: Go -> mtxrpicam
 	videoPipe *pipe // video: mtxrpicam -> Go
 
-	// frame delivery
+	// frame delivery (created once in Start, closed only in Stop)
 	framesCh chan Frame
-	doneCh   chan struct{}
 	stopOnce sync.Once
+
+	// lifecycle state
+	ctx     context.Context
+	started bool
+	stopped bool
+	wg      sync.WaitGroup // tracks run() goroutine
 
 	// binary path
 	binPath string
@@ -136,12 +144,13 @@ func NewRPiCamera(opts ...RPiCameraOption) *RPiCamera {
 	return c
 }
 
-// Start spawns the mtxrpicam subprocess and begins reading frames.
+// Start begins capturing frames. The mtxrpicam subprocess is automatically
+// restarted if it dies. Call Stop() to shut down.
 func (c *RPiCamera) Start(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.cmd != nil {
+	if c.started {
 		return fmt.Errorf("camera already started")
 	}
 
@@ -150,11 +159,79 @@ func (c *RPiCamera) Start(ctx context.Context) error {
 		return fmt.Errorf("mtxrpicam binary not found at %s: %w", c.binPath, err)
 	}
 
-	// Create pipes for subprocess communication using syscall.Pipe
-	// (os.Pipe sets close-on-exec, which would close FDs on fork).
-	// mtxrpicam expects FDs passed via environment variables:
-	//   PIPE_CONF_FD  — Go writes config commands here (child reads)
-	//   PIPE_VIDEO_FD — mtxrpicam writes video frames here (child writes)
+	c.ctx = ctx
+	c.started = true
+	c.framesCh = make(chan Frame, 30) // buffer ~2 seconds at 15fps
+
+	c.wg.Add(1)
+	go c.run()
+
+	return nil
+}
+
+// run is the main loop that spawns and monitors the mtxrpicam subprocess.
+// It runs in its own goroutine and handles automatic restart on subprocess
+// death with exponential backoff.
+func (c *RPiCamera) run() {
+	defer c.wg.Done()
+
+	backoff := time.Second
+	const maxBackoff = 30 * time.Second
+
+	for {
+		// Check if we should stop
+		c.mu.RLock()
+		stopped := c.stopped
+		c.mu.RUnlock()
+		if stopped {
+			return
+		}
+
+		// Spawn subprocess
+		err := c.spawnSubprocess()
+		if err != nil {
+			log.Printf("camera: spawn failed: %v, retrying in %v", err, backoff)
+			select {
+			case <-c.ctx.Done():
+				return
+			case <-time.After(backoff):
+				backoff = min(backoff*2, maxBackoff)
+				continue
+			}
+		}
+
+		// Reset backoff on successful spawn
+		backoff = time.Second
+
+		// readLoop blocks until subprocess dies or pipe error
+		c.readLoop()
+
+		// Clean up dead subprocess (keep framesCh alive)
+		c.cleanupSubprocess()
+
+		// Check if we should stop
+		c.mu.RLock()
+		stopped = c.stopped
+		c.mu.RUnlock()
+		if stopped {
+			return
+		}
+
+		log.Printf("camera: subprocess died, restarting in %v", backoff)
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-time.After(backoff):
+			backoff = min(backoff*2, maxBackoff)
+		}
+	}
+}
+
+// spawnSubprocess creates pipes, spawns mtxrpicam, and sends initial config.
+func (c *RPiCamera) spawnSubprocess() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	var confFds, videoFds [2]int
 	if err := syscall.Pipe(confFds[:]); err != nil {
 		return fmt.Errorf("create conf pipe: %w", err)
@@ -166,7 +243,6 @@ func (c *RPiCamera) Start(ctx context.Context) error {
 	}
 
 	// Clear close-on-exec flag so FDs survive exec to child process.
-	// mtxrpicam receives FD numbers via env vars (PIPE_CONF_FD, PIPE_VIDEO_FD).
 	for _, fd := range []int{confFds[0], confFds[1], videoFds[0], videoFds[1]} {
 		flags, _ := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
 		unix.FcntlInt(uintptr(fd), unix.F_SETFD, flags&^unix.FD_CLOEXEC)
@@ -174,8 +250,13 @@ func (c *RPiCamera) Start(ctx context.Context) error {
 
 	binPath, err := filepath.Abs(c.binPath)
 	if err != nil {
+		syscall.Close(confFds[0])
+		syscall.Close(confFds[1])
+		syscall.Close(videoFds[0])
+		syscall.Close(videoFds[1])
 		return fmt.Errorf("resolve binary path: %w", err)
 	}
+
 	binDir := filepath.Dir(binPath)
 	env := []string{
 		"PIPE_CONF_FD=" + strconv.Itoa(confFds[0]),
@@ -185,13 +266,11 @@ func (c *RPiCamera) Start(ctx context.Context) error {
 		"PATH=" + os.Getenv("PATH"),
 	}
 
-	c.cmd = exec.CommandContext(ctx, binPath)
+	c.cmd = exec.CommandContext(c.ctx, binPath)
 	c.cmd.Env = env
 	c.cmd.Dir = binDir
 	c.cmd.Stdout = os.Stdout
 	c.cmd.Stderr = os.Stderr
-
-	// Prevent subprocess from receiving signals from parent
 	c.cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid: true,
 	}
@@ -206,61 +285,63 @@ func (c *RPiCamera) Start(ctx context.Context) error {
 	}
 
 	// Close the ends that belong to the child process
-	syscall.Close(confFds[0])    // child reads config
-	syscall.Close(videoFds[1])   // child writes video
+	syscall.Close(confFds[0])  // child reads config
+	syscall.Close(videoFds[1]) // child writes video
 
-	// Initialize pipe wrappers using os.NewFile for io.Reader/Writer interface
+	// Initialize pipe wrappers
 	confWriteFile := os.NewFile(uintptr(confFds[1]), "conf-write")
 	videoReadFile := os.NewFile(uintptr(videoFds[0]), "video-read")
 	c.confPipe = newPipe(nil, confWriteFile)
 	c.videoPipe = newPipe(videoReadFile, nil)
 
-	// Setup frame channel
-	c.framesCh = make(chan Frame, 30) // buffer ~2 seconds at 15fps
-	c.doneCh = make(chan struct{})
-
-	// Start frame reader goroutine BEFORE sending config
-	// so it's ready to receive the 'r' (ready) signal from mtxrpicam.
-	go c.readLoop()
-
 	// Send initial config
 	if err := c.confPipe.write(c.params.SerializeCommand()); err != nil {
+		// Config send failed — subprocess won't produce frames
+		c.cleanupSubprocessLocked()
 		return fmt.Errorf("send initial config: %w", err)
 	}
+
+	log.Printf("camera: mtxrpicam subprocess started (pid %d)", c.cmd.Process.Pid)
+	return nil
+}
+
+// Stop gracefully stops the camera and its subprocess.
+func (c *RPiCamera) Stop() error {
+	c.stopOnce.Do(func() {
+		// Signal run() to stop accepting restarts
+		c.mu.Lock()
+		c.stopped = true
+		c.mu.Unlock()
+
+		// Kill subprocess and close pipes (causes readLoop to exit)
+		c.cleanupSubprocess()
+
+		// Close frames channel so downstream consumers exit their range loops
+		c.mu.Lock()
+		if c.framesCh != nil {
+			close(c.framesCh)
+			c.framesCh = nil
+		}
+		c.mu.Unlock()
+
+		// Wait for run() goroutine to finish
+		c.wg.Wait()
+	})
 
 	return nil
 }
 
-// Stop gracefully stops the camera subprocess.
-func (c *RPiCamera) Stop() error {
-	var retErr error
-	c.stopOnce.Do(func() {
-		c.mu.Lock()
-		defer c.mu.Unlock()
-
-		if c.cmd == nil {
-			return
-		}
-
-		// Send quit command
-		if c.confPipe != nil {
-			_ = c.confPipe.write(SerializeQuit())
-		}
-
-		// Close config pipe write end to signal subprocess
-		c.cleanup()
-
-		retErr = nil
-	})
-
-	return retErr
+// cleanupSubprocess cleans up the mtxrpicam subprocess and pipes.
+// Does NOT close framesCh — that's only done by Stop().
+func (c *RPiCamera) cleanupSubprocess() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cleanupSubprocessLocked()
 }
 
-// cleanup closes all pipes and waits for the subprocess.
-// Must be called with mu held.
-func (c *RPiCamera) cleanup() {
+// cleanupSubprocessLocked cleans up subprocess resources with mu already held.
+func (c *RPiCamera) cleanupSubprocessLocked() {
 	if c.confPipe != nil {
-		// Close the underlying writer (confWrite)
 		if closer, ok := c.confPipe.writer.(interface{ Close() error }); ok {
 			_ = closer.Close()
 		}
@@ -268,21 +349,10 @@ func (c *RPiCamera) cleanup() {
 	}
 
 	if c.videoPipe != nil {
-		// Close the underlying reader (videoRead)
 		if closer, ok := c.videoPipe.reader.(interface{ Close() error }); ok {
 			_ = closer.Close()
 		}
 		c.videoPipe = nil
-	}
-
-	if c.framesCh != nil {
-		close(c.framesCh)
-		c.framesCh = nil
-	}
-
-	if c.doneCh != nil {
-		close(c.doneCh)
-		c.doneCh = nil
 	}
 
 	if c.cmd != nil && c.cmd.Process != nil {
@@ -300,11 +370,13 @@ func (c *RPiCamera) Frames() <-chan Frame {
 }
 
 // SetParam modifies a camera parameter and sends the update to the subprocess.
+// If the subprocess is between restarts, the param is saved in memory and
+// applied when the next subprocess spawns.
 func (c *RPiCamera) SetParam(name string, value interface{}) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.cmd == nil {
+	if !c.started || c.stopped {
 		return fmt.Errorf("camera not started")
 	}
 
@@ -317,13 +389,12 @@ func (c *RPiCamera) SetParam(name string, value interface{}) error {
 		return fmt.Errorf("set %s: %w", name, err)
 	}
 
-	// Send updated params to subprocess
-	if c.confPipe == nil {
-		return fmt.Errorf("config pipe not available")
-	}
-
-	if err := c.confPipe.write(c.params.SerializeCommand()); err != nil {
-		return fmt.Errorf("send param update: %w", err)
+	// Send updated params to subprocess if currently running
+	if c.confPipe != nil {
+		if err := c.confPipe.write(c.params.SerializeCommand()); err != nil {
+			log.Printf("camera: failed to send param update: %v", err)
+			// Params are saved — will be applied on next restart
+		}
 	}
 
 	// Update info if resolution/FPS changed
@@ -355,32 +426,27 @@ func (c *RPiCamera) Info() CameraInfo {
 }
 
 // readLoop reads frames from the video pipe and sends them to the frames channel.
-// This runs in its own goroutine started by Start().
+// Blocks until the pipe is closed or an error occurs.
+// Called synchronously from run() — does NOT clean up subprocess on exit.
 func (c *RPiCamera) readLoop() {
-	defer func() {
-		// Ensure cleanup on exit
-		c.mu.Lock()
-		c.cleanup()
-		c.mu.Unlock()
-		}()
+	c.mu.RLock()
+	videoPipe := c.videoPipe
+	framesCh := c.framesCh
+	c.mu.RUnlock()
 
+	if videoPipe == nil || framesCh == nil {
+		return
+	}
 
 	for {
-		buf, err := c.videoPipe.read()
+		buf, err := videoPipe.read()
 		if err != nil {
-			return // pipe closed or error — cleanup will happen
+			log.Printf("camera: pipe read error: %v", err)
+			return
 		}
 
 		if len(buf) == 0 {
 			continue
-		}
-
-		c.mu.RLock()
-		framesCh := c.framesCh
-		c.mu.RUnlock()
-
-		if framesCh == nil {
-			return
 		}
 
 		switch buf[0] {
@@ -409,15 +475,11 @@ func (c *RPiCamera) readLoop() {
 			pts := multiplyAndDivide(dts, 90000, 1e6)
 
 			// Calculate NTP timestamp
-			now := time.Now()
-			ntp := now
+			ntp := time.Now()
 
 			// Extract NALU data (everything after the 9-byte header)
 			naluData := make([]byte, len(buf)-9)
 			copy(naluData, buf[9:])
-
-			// Detect keyframe: look for SPS NALU (type 7) in Annex-B data
-			isKeyFrame := isIDRFrame(naluData)
 
 			frame := Frame{
 				Data:      naluData,
@@ -428,7 +490,6 @@ func (c *RPiCamera) readLoop() {
 			// Non-blocking send — drop frame if channel full
 			select {
 			case framesCh <- frame:
-				_ = isKeyFrame // stored in frame struct if needed
 			default:
 				// Frame dropped — consumer too slow
 			}
@@ -490,31 +551,31 @@ func isIDRFrame(data []byte) bool {
 // mapParamName maps user-facing parameter names to internal param field names.
 func mapParamName(name string) (string, bool) {
 	mapping := map[string]string{
-		"brightness":  "Brightness",
-		"contrast":    "Contrast",
-		"saturation":  "Saturation",
-		"sharpness":   "Sharpness",
-		"width":       "Width",
-		"height":      "Height",
-		"fps":         "FPS",
-		"exposure":    "Exposure",
+		"brightness":   "Brightness",
+		"contrast":     "Contrast",
+		"saturation":   "Saturation",
+		"sharpness":    "Sharpness",
+		"width":        "Width",
+		"height":       "Height",
+		"fps":          "FPS",
+		"exposure":     "Exposure",
 		"exposureMode": "Exposure",
-		"gain":        "Gain",
-		"awbMode":     "AWB",
-		"hFlip":       "HFlip",
-		"vFlip":       "VFlip",
-		"shutter":     "Shutter",
-		"denoise":     "Denoise",
-		"ev":          "EV",
-		"bitrate":     "Bitrate",
-		"idrPeriod":   "IDRPeriod",
-		"metering":    "Metering",
-		"mode":        "Mode",
-		"hdr":         "HDR",
-		"awbGainRed":  "AWBGainRed",
-		"awbGainBlue": "AWBGainBlue",
-		"codec":       "Codec",
-		"cameraID":    "CameraID",
+		"gain":         "Gain",
+		"awbMode":      "AWB",
+		"hFlip":        "HFlip",
+		"vFlip":        "VFlip",
+		"shutter":      "Shutter",
+		"denoise":      "Denoise",
+		"ev":           "EV",
+		"bitrate":      "Bitrate",
+		"idrPeriod":    "IDRPeriod",
+		"metering":     "Metering",
+		"mode":         "Mode",
+		"hdr":          "HDR",
+		"awbGainRed":   "AWBGainRed",
+		"awbGainBlue":  "AWBGainBlue",
+		"codec":        "Codec",
+		"cameraID":     "CameraID",
 	}
 
 	internal, ok := mapping[name]
