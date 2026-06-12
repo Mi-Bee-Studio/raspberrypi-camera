@@ -1,12 +1,12 @@
 [中文](zh/deployment.md)
-# RPi-CAM ONVIF Camera Server Deployment Guide
+# MiBee Eye ONVIF Camera Server Deployment Guide
 
-This guide covers deployment of the rpi-cam ONVIF camera server for Raspberry Pi, including migration from MediaMTX and integration with NVR systems.
+This guide covers deployment of the MiBee Eye ONVIF camera server for single-board computers (Raspberry Pi, Banana Pi, Orange Pi), including migration from MediaMTX and integration with NVR systems.
 
 ## Prerequisites
 
 ### Target Device Requirements
-- Raspberry Pi 3B (or similar ARM64 device)
+- Single-board computer (RPi 3B/4/5, Banana Pi M5, Orange Pi 5) with ARM64 architecture
 - Camera module connected (OV5647, IMX219, IMX477, or USB)
 - Debian 13 (trixie) with kernel 6.12.75+rpt-rpi-v8
 - 905MB RAM minimum
@@ -22,7 +22,7 @@ This guide covers deployment of the rpi-cam ONVIF camera server for Raspberry Pi
 
 ### mtxrpicam Binary Bundle
 
-rpi-cam uses `mtxrpicam` from the [mediamtx-rpicamera](https://github.com/bluenviron/mediamtx-rpicamera) project for camera capture. This binary bundles its own `libcamera` shared libraries to avoid version conflicts with the system-installed libcamera.
+MiBee Eye uses `mtxrpicam` from the [mediamtx-rpicamera](https://github.com/bluenviron/mediamtx-rpicamera) project for camera capture. This binary bundles its own `libcamera` shared libraries to avoid version conflicts with the system-installed libcamera.
 
 **Required files in `deploy/bin/`:**
 ```
@@ -47,8 +47,8 @@ gh release download v2.6.0 --repo bluenviron/mediamtx-rpicamera \
 tar xzf /tmp/mtxrpicam_64.tar.gz -C /tmp/
 
 # Deploy to target device
-scp -r /tmp/mtxrpicam_64/* <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/deploy/bin/
-scp /tmp/mtxrpicam_64/mtxrpicam <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/deploy/bin/mtxrpicam
+scp -r /tmp/mtxrpicam_64/* <your-rpi-user>@<your-rpi-ip>:~/mibee-eye/deploy/bin/
+scp /tmp/mtxrpicam_64/mtxrpicam <your-rpi-user>@<your-rpi-ip>:~/mibee-eye/deploy/bin/mtxrpicam
 ```
 
 **Why bundled libcamera?** Debian 13 ships libcamera 0.7.0 (`libcamera.so.0.7`), but mtxrpicam is compiled against a specific libcamera version (`libcamera.so.9.9`). The bundled library avoids this mismatch. If you see `encoder_create(): unable to activate output stream`, ensure the bundled libs are in `deploy/bin/` and `LD_LIBRARY_PATH` is set correctly.
@@ -65,14 +65,14 @@ ssh <your-rpi-user>@<your-rpi-ip> 'sudo apt install -y ffmpeg'
 
 ```bash
 # Clone the repository
-git clone https://github.com/Mi-Bee-Studio/raspberrypi-camera
-cd raspberrypi-camera
+git clone https://github.com/Mi-Bee-Studio/mibee-eye-raspi
+cd mibee-eye-raspi
 
 # Build for ARM64 architecture
 make build GOOS=linux GOARCH=arm64
 
 # Verify binary creation
-ls -la build/rpi-cam
+ls -la build/mibee-eye
 ```
 
 ## Installation Steps
@@ -81,7 +81,7 @@ ls -la build/rpi-cam
 
 ```bash
 # Create working directory on target
-ssh <your-rpi-user>@<your-rpi-ip> "mkdir -p ~/rpi-cam"
+ssh <your-rpi-user>@<your-rpi-ip> "mkdir -p ~/mibee-eye"
 
 # Stop MediaMTX to free camera access
 ssh <your-rpi-user>@<your-rpi-ip> 'sudo systemctl stop mediamtx'
@@ -92,26 +92,26 @@ ssh <your-rpi-user>@<your-rpi-ip> 'sudo systemctl disable mediamtx'
 
 ```bash
 # Copy binary and configuration
-scp build/rpi-cam <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/
-scp configs/config.example.yaml <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/config.yaml
+scp build/mibee-eye <your-rpi-user>@<your-rpi-ip>:~/mibee-eye/
+scp configs/config.example.yaml <your-rpi-user>@<your-rpi-ip>:~/mibee-eye/config.yaml
 
 # Copy systemd service unit
-scp deploy/rpi-cam.service <your-rpi-user>@<your-rpi-ip>:/tmp/
+scp deploy/mibee-eye.service <your-rpi-user>@<your-rpi-ip>:/tmp/
 
 # Copy camera capture dependencies
-scp -r deploy/bin/ <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/deploy/
+scp -r deploy/bin/ <your-rpi-user>@<your-rpi-ip>:~/mibee-eye/deploy/
 ```
 
 ### 3. Install Systemd Service
 
 ```bash
 # Install service and enable
-ssh <your-rpi-user>@<your-rpi-ip> "sudo mv /tmp/rpi-cam.service /etc/systemd/system/"
+ssh <your-rpi-user>@<your-rpi-ip> "sudo mv /tmp/mibee-eye.service /etc/systemd/system/"
 ssh <your-rpi-user>@<your-rpi-ip> "sudo systemctl daemon-reload"
-ssh <your-rpi-user>@<your-rpi-ip> "sudo systemctl enable rpi-cam"
+ssh <your-rpi-user>@<your-rpi-ip> "sudo systemctl enable mibee-eye"
 ```
 
-> **Note:** The systemd unit sets `Environment=LD_LIBRARY_PATH=/home/pi/rpi-cam/deploy/bin` so the bundled libcamera libraries are found at runtime. If you install to a different path, update this value in the service file accordingly.
+> **Note:** The systemd unit sets `Environment=LD_LIBRARY_PATH=/home/pi/mibee-eye/deploy/bin` so the bundled libcamera libraries are found at runtime. If you install to a different path, update this value in the service file accordingly.
 
 ### 4. Automated Deployment
 
@@ -121,8 +121,8 @@ ssh <your-rpi-user>@<your-rpi-ip> "sudo systemctl enable rpi-cam"
 
 # The script automatically:
 # 1. Stops and disables MediaMTX
-# 2. Deploys rpi-cam binary and config
-# 3. Installs systemd service
+2. Deploys mibee-eye binary and config
+3. Installs systemd service
 # 4. Enables the service
 ```
 
@@ -172,10 +172,10 @@ logging:
 
 ```bash
 # Start with specific password
-RPICAM_ONVIF_PASSWORD=secret123 ./build/rpi-cam -config config.yaml
+MIBEE_EYE_ONVIF_PASSWORD=secret123 ./build/mibee-eye -config config.yaml
 
 # Debug logging
-RPICAM_LOGGING_LEVEL=debug ./build/rpi-cam -config config.yaml
+MIBEE_EYE_LOGGING_LEVEL=debug ./build/mibee-eye -config config.yaml
 ```
 
 ## Starting the Service
@@ -184,22 +184,22 @@ RPICAM_LOGGING_LEVEL=debug ./build/rpi-cam -config config.yaml
 
 ```bash
 # Start the service
-sudo systemctl start rpi-cam
+sudo systemctl start mibee-eye
 
 # Check status
-systemctl status rpi-cam
+systemctl status mibee-eye
 
 # View logs
-journalctl -u rpi-cam -f
+journalctl -u mibee-eye -f
 
 # Enable auto-start on boot
-sudo systemctl enable rpi-cam
+sudo systemctl enable mibee-eye
 
 # Restart service
-sudo systemctl restart rpi-cam
+sudo systemctl restart mibee-eye
 
 # Stop service
-sudo systemctl stop rpi-cam
+sudo systemctl stop mibee-eye
 ```
 
 ## Verification
@@ -208,10 +208,10 @@ sudo systemctl stop rpi-cam
 
 ```bash
 # Check if service is running
-systemctl status rpi-cam
+systemctl status mibee-eye
 
 # Verify no errors in logs
-journalctl -u rpi-cam --since "5 minutes ago"
+journalctl -u mibee-eye --since "5 minutes ago"
 ```
 
 ### 2. RTSP Stream Test
@@ -281,7 +281,7 @@ file snapshot.jpg
 
 ```bash
 # Check memory usage (target: ~20MB total)
-ps -o pid,rss,comm -p $(pgrep -f "rpi-cam|mtxrpicam")
+ps -o pid,rss,comm -p $(pgrep -f "mibee-eye|mtxrpicam")
 
 # Check web UI
 curl -s -o /dev/null -w "%{http_code}" http://localhost:8088/
@@ -314,10 +314,10 @@ dtoverlay=ov5647  # or imx219, imx477, etc.
 **Solution:**
 ```bash
 # Verify bundled libs exist
-ls ~/rpi-cam/deploy/bin/libcamera*.so*
+ls ~/mibee-eye/deploy/bin/libcamera*.so*
 
 # Verify LD_LIBRARY_PATH in service
-grep LD_LIBRARY_PATH /etc/systemd/system/rpi-cam.service
+grep LD_LIBRARY_PATH /etc/systemd/system/mibee-eye.service
 
 # If libs are missing, re-deploy from mediamtx-rpicamera release
 # See "Camera Capture Dependencies" section above
@@ -339,7 +339,7 @@ sudo ufw allow 8080/tcp
 **Solution:** Verify RTSP port configuration and service status:
 ```bash
 # Check RTSP server logs
-journalctl -u rpi-cam --grep "RTSP"
+journalctl -u mibee-eye --grep "RTSP"
 
 # Test port connectivity
 telnet <your-rpi-ip> 8554
@@ -354,7 +354,7 @@ telnet <your-rpi-ip> 8554
 yamllint config.yaml
 
 # Check config values
-./build/rpi-cam --validate-config --config config.yaml
+./build/mibee-eye --validate-config --config config.yaml
 ```
 
 **Problem:** Invalid ONVIF password
@@ -384,7 +384,7 @@ make service-restart
 
 ```bash
 # Backup current configuration
-sudo cp /etc/systemd/system/rpi-cam.service ~/backups/
+sudo cp /etc/systemd/system/mibee-eye.service ~/backups/
 cp config.yaml ~/backups/config.yaml.$(date +%Y%m%d).backup
 ```
 
@@ -392,6 +392,6 @@ cp config.yaml ~/backups/config.yaml.$(date +%Y%m%d).backup
 
 For additional support:
 - Review troubleshooting documentation
-- Check service logs with `journalctl -u rpi-cam -f`
+Check service logs with `journalctl -u mibee-eye -f`
 - Validate configuration with `--validate-config` flag
-- Test with debug logging: `RPICAM_LOGGING_LEVEL=debug`
+Test with debug logging: `MIBEE_EYE_LOGGING_LEVEL=debug`

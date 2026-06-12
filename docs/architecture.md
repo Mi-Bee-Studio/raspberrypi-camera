@@ -1,10 +1,10 @@
 [中文](zh/architecture.md)
 
-# Architecture - rpi-cam ONVIF Camera Server
+# Architecture - MiBee Eye ONVIF Camera Server
 
-## System Overview
+Measured on single-board computers at 720p@15fps:
 
-rpi-cam is a lightweight Go application providing ONVIF-compliant camera services for Raspberry Pi. It replaces MediaMTX with a custom implementation to add missing ONVIF server capabilities while maintaining low resource usage (~20MB RAM, measured on device: rpi-cam 9MB + mtxrpicam 10MB). The system supports ONVIF Device/Media/PTZ/Imaging services, RTSP streaming, RTMP push, and WS-Discovery for NVR integration.
+MiBee Eye is a lightweight Go application providing ONVIF-compliant camera services for single-board computers (Raspberry Pi, Banana Pi, Orange Pi). It replaces MediaMTX with a custom implementation to add missing ONVIF server capabilities while maintaining low resource usage (~20MB RAM, measured on device: MiBee Eye 9MB + mtxrpicam 10MB). The system supports ONVIF Device/Media/PTZ/Imaging services, RTSP streaming, RTMP push, and WS-Discovery for NVR integration.
 
 ## Component Architecture
 
@@ -195,12 +195,12 @@ Measured on Raspberry Pi 3B at 720p@15fps:
 
 || Process | RSS Memory | Purpose |
 ||---------|------------|---------|
-|| rpi-cam | ~9MB | Go main process (ONVIF + RTSP + pipeline) |
+| MiBee Eye | ~9MB | Go main process (ONVIF + RTSP + pipeline) |
 || mtxrpicam | ~10MB | Camera capture subprocess |
 || **ffmpeg (HLS)** | ~15MB | HLS segmenter (exists only when HLS is active) |
 || **Total** | **~35MB** | |
 
-- **CPU**: ~2% for rpi-cam, ~12% for mtxrpicam at 720p@15fps
+- **CPU**: ~2% for MiBee Eye, ~12% for mtxrpicam at 720p@15fps
 - **Network**: ~2Mbps for 720p@15fps H.264 stream
 
 ## Dependencies
@@ -217,7 +217,7 @@ Measured on Raspberry Pi 3B at 720p@15fps:
 The system runs as a single systemd service with:
 
 - **Process Isolation**: Camera capture in subprocess, main service in Go process
-- **Resource Usage**: ~20MB RAM measured on RPi 3B
+- **Resource Usage**: ~20MB RAM measured on SBCs
 - **Cross-compilation**: Build from x86 workstation to aarch64 RPi
 - **Configuration**: YAML-based config with environment variable overrides
 - **Monitoring**: Prometheus metrics for operational visibility

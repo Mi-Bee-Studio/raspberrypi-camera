@@ -1,8 +1,8 @@
-# Research Documentation - rpi3b-cam
+# Research Documentation - MiBee Eye
 
 ## Overview
 
-This document documents the open-source research and evaluation process that led to the architecture decisions for the rpi3b-cam project. The research focused on ONVIF server libraries, Raspberry Pi camera solutions, RTMP push capabilities, and the strategic decision to replace MediaMTX with a custom Go implementation.
+This document documents the open-source research and evaluation process that led to the architecture decisions for the MiBee Eye project. The research focused on ONVIF server libraries, Raspberry Pi camera solutions, RTMP push capabilities, and the strategic decision to replace MediaMTX with a custom Go implementation.
 
 ## 1. Go ONVIF Server Libraries
 

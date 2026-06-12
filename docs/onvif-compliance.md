@@ -1,7 +1,7 @@
 [中文](zh/onvif-compliance.md)\n
 # ONVIF Compliance Reference
 
-This document provides detailed compliance information for the rpi-cam ONVIF camera service. The implementation provides ONVIF Device/Media/PTZ/Imaging services, WS-Discovery support, and WS-Security authentication for NVR integration.
+This document provides detailed compliance information for the MiBee Eye ONVIF camera service. The implementation provides ONVIF Device/Media/PTZ/Imaging services, WS-Discovery support, and WS-Security authentication for NVR integration.
 
 ## ONVIF Profile S Compliance
 
@@ -30,7 +30,7 @@ This document provides detailed compliance information for the rpi-cam ONVIF cam
 ```yaml
 Manufacturer: "Raspberry Pi"
 Model: "Camera V1" 
-Firmware: "rpi-cam-v1.0.0"
+Firmware: "mibee-eye-v1.0.0"
 SerialNumber: "OV5647-SERIAL"
 HardwareId: "OV5647"
 ```

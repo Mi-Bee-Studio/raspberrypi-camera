@@ -2,7 +2,7 @@
 
 [中文](zh/configuration.md)
 
-The rpi-cam configuration is written in YAML format and controls all aspects of the camera service, including capture settings, streaming protocols, and device identification.
+The MiBee Eye configuration is written in YAML format and controls all aspects of the camera service, including capture settings, streaming protocols, and device identification.
 
 ## Configuration File
 
@@ -211,71 +211,71 @@ logging:
 
 ## Environment Variable Overrides
 
-All configuration values can be overridden using environment variables with the `RPICAM_` prefix. This is useful for deployment, testing, and containerized environments.
+All configuration values can be overridden using environment variables with the `MIBEE_EYE_` prefix. This is useful for deployment, testing, and containerized environments.
 
 ### Format
-Environment variables follow the pattern: `RPICAM_<SECTION>_<FIELD>`
+Environment variables follow the pattern: `MIBEE_EYE_<SECTION>_<FIELD>`
 
 ### Examples
 
 ```bash
 # Override camera resolution
-RPICAM_CAMERA_WIDTH=1920 RPICAM_CAMERA_HEIGHT=1080 ./rpi-cam
+MIBEE_EYE_CAMERA_WIDTH=1920 MIBEE_EYE_CAMERA_HEIGHT=1080 ./mibee-eye
 
 # Set ONVIF password for production
-RPICAM_ONVIF_PASSWORD=securepassword123 ./rpi-cam
+MIBEE_EYE_ONVIF_PASSWORD=securepassword123 ./mibee-eye
 
 # Change RTSP port
-RPICAM_RTSP_PORT=554 ./rpi-cam
+MIBEE_EYE_RTSP_PORT=554 ./mibee-eye
 
 # Enable debug logging
-RPICAM_LOGGING_LEVEL=debug ./rpi-cam
+MIBEE_EYE_LOGGING_LEVEL=debug ./mibee-eye
 
 # Web UI access and credentials
-RPICAM_WEB_ENABLED=true ./rpi-cam
+MIBEE_EYE_WEB_ENABLED=true ./mibee-eye
 
 # Set web UI credentials (separate from ONVIF)
-RPICAM_WEB_USERNAME=admin RPICAM_WEB_PASSWORD=webpass ./rpi-cam
+MIBEE_EYE_WEB_USERNAME=admin MIBEE_EYE_WEB_PASSWORD=webpass ./mibee-eye
 # Set ONVIF password for production
-RPICAM_ONVIF_PASSWORD=securepassword123 ./rpi-cam
+MIBEE_EYE_ONVIF_PASSWORD=securepassword123 ./mibee-eye
 
 # Set device information
-RPICAM_DEVICE_NAME="Office Camera" ./rpi-cam
+MIBEE_EYE_DEVICE_NAME="Office Camera" ./mibee-eye
 ```
 
 ### All Environment Variables
 
 | Section | Field | Environment Variable |
 |---------|-------|---------------------|
-| **camera** | bin_path | `RPICAM_CAMERA_BINPATH` |
-| | device | `RPICAM_CAMERA_DEVICE` |
-| | width | `RPICAM_CAMERA_WIDTH` |
-| | height | `RPICAM_CAMERA_HEIGHT` |
-| | fps | `RPICAM_CAMERA_FPS` |
-| | codec | `RPICAM_CAMERA_CODEC` |
-| | bitrate | `RPICAM_CAMERA_BITRATE` |
-| | brightness | `RPICAM_CAMERA_BRIGHTNESS` |
-| | contrast | `RPICAM_CAMERA_CONTRAST` |
-| | saturation | `RPICAM_CAMERA_SATURATION` |
-| | sharpness | `RPICAM_CAMERA_SHARPNESS` |
-| **rtsp** | port | `RPICAM_RTSP_PORT` |
-| | username | `RPICAM_RTSP_USERNAME` |
-| | password | `RPICAM_RTSP_PASSWORD` |
-| **onvif** | port | `RPICAM_ONVIF_PORT` |
-| | username | `RPICAM_ONVIF_USERNAME` |
-| | password | `RPICAM_ONVIF_PASSWORD` |
-| **rtmp** | enabled | `RPICAM_RTMP_ENABLED` |
-| | url | `RPICAM_RTMP_URL` |
-| **device** | name | `RPICAM_DEVICE_NAME` |
-| | manufacturer | `RPICAM_DEVICE_MANUFACTURER` |
-| | model | `RPICAM_DEVICE_MODEL` |
-| | firmware | `RPICAM_DEVICE_FIRMWARE` |
-| | hardware_id | `RPICAM_DEVICE_HARDWAREID` |
-| | serial_number | `RPICAM_DEVICE_SERIALNUMBER` |
-| **web** | enabled | `RPICAM_WEB_ENABLED` |
-  | | port | `RPICAM_WEB_PORT` |
-  | | username | `RPICAM_WEB_USERNAME` |
-  | | password | `RPICAM_WEB_PASSWORD` |
+| `MIBEE_EYE_CAMERA_BINPATH` |
+| `MIBEE_EYE_CAMERA_DEVICE` |
+| `MIBEE_EYE_CAMERA_WIDTH` |
+| `MIBEE_EYE_CAMERA_HEIGHT` |
+| `MIBEE_EYE_CAMERA_FPS` |
+| `MIBEE_EYE_CAMERA_CODEC` |
+| `MIBEE_EYE_CAMERA_BITRATE` |
+| `MIBEE_EYE_CAMERA_BRIGHTNESS` |
+| `MIBEE_EYE_CAMERA_CONTRAST` |
+| `MIBEE_EYE_CAMERA_SATURATION` |
+| `MIBEE_EYE_CAMERA_SHARPNESS` |
+| `MIBEE_EYE_RTSP_PORT` |
+| `MIBEE_EYE_RTSP_USERNAME` |
+| `MIBEE_EYE_RTSP_PASSWORD` |
+| `MIBEE_EYE_ONVIF_PORT` |
+| `MIBEE_EYE_ONVIF_USERNAME` |
+| `MIBEE_EYE_ONVIF_PASSWORD` |
+| `MIBEE_EYE_RTMP_ENABLED` |
+| `MIBEE_EYE_RTMP_URL` |
+| `MIBEE_EYE_DEVICE_NAME` |
+| `MIBEE_EYE_DEVICE_MANUFACTURER` |
+| `MIBEE_EYE_DEVICE_MODEL` |
+| `MIBEE_EYE_DEVICE_FIRMWARE` |
+| `MIBEE_EYE_DEVICE_HARDWAREID` |
+| `MIBEE_EYE_DEVICE_SERIALNUMBER` |
+| `MIBEE_EYE_WEB_ENABLED` |
+  | `MIBEE_EYE_WEB_PORT` |
+  | `MIBEE_EYE_WEB_USERNAME` |
+  | `MIBEE_EYE_WEB_PASSWORD` |
 
 ## Example Configurations
 
@@ -454,13 +454,13 @@ device:
 
 1. **Camera Compatibility**: Not all resolutions and settings work with all camera modules. Test your configuration with your specific camera hardware.
 
-2. **Performance**: Higher resolutions and bitrates require more CPU and bandwidth. On Raspberry Pi 3B, 720p @ 15fps is the recommended balance.
+2. **Performance**: Higher resolutions and bitrates require more CPU and bandwidth. On SBCs, 720p @ 15fps is the recommended balance.
 
 3. **Security**: Always set a strong password for ONVIF authentication in production environments.
 
 4. **Network**: RTSP streaming can consume significant bandwidth. Ensure your network infrastructure can handle the chosen bitrate.
 
-5. **Debugging**: Use `RPICAM_LOGGING_LEVEL=debug` to troubleshoot configuration issues.
+5. **Debugging**: Use `MIBEE_EYE_LOGGING_LEVEL=debug` to troubleshoot configuration issues.
 
 6. **Environment Variables**: Use environment variables for sensitive data like passwords to avoid storing them in configuration files.
 

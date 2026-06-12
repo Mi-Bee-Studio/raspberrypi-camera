@@ -1,14 +1,14 @@
-# rpi-cam Troubleshooting Guide
+# MiBee Eye Troubleshooting Guide
 
 [中文](zh/troubleshooting.md)
 
-This guide covers common issues and solutions for rpi-cam, the Raspberry Pi ONVIF camera service.
+This guide covers common issues and solutions for MiBee Eye, the single-board computer ONVIF camera service.
 
 ## Quick Health Check
 
 ```bash
-# Check if rpi-cam is running
-systemctl status rpi-cam
+# Check if mibee-eye is running
+systemctl status mibee-eye
 
 # Check camera device
 ls -la /dev/video0
@@ -31,13 +31,13 @@ curl -s http://localhost:8088/hls/stream.m3u8 | head -5
 ```
 
 # Check camera encoder is working (look for x264 in logs)
-journalctl -u rpi-cam --since "1 minute ago" | grep -i "x264\|encoder\|h264"
+journalctl -u mibee-eye --since "1 minute ago" | grep -i "x264\|encoder\|h264"
 
 ## Camera Detection Issues
 
 ### Symptoms
 - Camera not found in NVR discovery
-- rpi-cam logs show "camera not detected"
+- mibee-eye logs show "camera not detected"
 - Stream shows black screen
 
 ### Diagnosis
@@ -109,7 +109,7 @@ grep -A2 'web:' config.yaml
    ```
 2. **Clear browser cache**: Token-based auth stores session in localStorage. Clear browser data for the site.
 3. **Check config**: Ensure web.enabled: true in config.yaml
-4. **Restart service**: sudo systemctl restart rpi-cam
+sudo systemctl restart mibee-eye
 ## Camera Encoder Issues
 
 ### Symptoms
@@ -120,14 +120,14 @@ grep -A2 'web:' config.yaml
 ### Diagnosis
 ```bash
 # Check if mtxrpicam can find libcamera
-LD_LIBRARY_PATH=/home/pi/rpi-cam/deploy/bin ldd ~/rpi-cam/deploy/bin/mtxrpicam
+LD_LIBRARY_PATH=/home/pi/mibee-eye/deploy/bin ldd ~/mibee-eye/deploy/bin/mtxrpicam
 # If "libcamera.so.9.9 => not found", bundled libs are missing
 
 # Check if bundled libcamera files exist
-ls -la ~/rpi-cam/deploy/bin/libcamera*.so*
+ls -la ~/mibee-eye/deploy/bin/libcamera*.so*
 
 # Check LD_LIBRARY_PATH in systemd service
-grep LD_LIBRARY_PATH /etc/systemd/system/rpi-cam.service
+grep LD_LIBRARY_PATH /etc/systemd/system/mibee-eye.service
 
 # Test camera directly with rpicam-vid
 rpicam-vid -t 1000 --width 1280 --height 720 -o /dev/null
@@ -148,23 +148,23 @@ The `mtxrpicam` binary is dynamically linked against `libcamera.so.9.9`, which i
    tar xzf mtxrpicam_64.tar.gz
    
    # Copy bundled libs to device
-   scp mtxrpicam_64/libcamera*.so* <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/deploy/bin/
-   scp mtxrpicam_64/mtxrpicam <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/deploy/bin/
+   scp mtxrpicam_64/libcamera*.so* <your-rpi-user>@<your-rpi-ip>:~/mibee-eye/deploy/bin/
+   scp mtxrpicam_64/mtxrpicam <your-rpi-user>@<your-rpi-ip>:~/mibee-eye/deploy/bin/
    
    # Restart service
-   sudo systemctl restart rpi-cam
+   sudo systemctl restart mibee-eye
    ```
 
 2. **LD_LIBRARY_PATH not set**: Verify systemd service configuration
    ```bash
    # Should contain: Environment=LD_LIBRARY_PATH=/path/to/deploy/bin
-   systemctl cat rpi-cam
+   systemctl cat mibee-eye
    
    # If missing, edit the service file
-   sudo systemctl edit rpi-cam --force
-   # Add: Environment=LD_LIBRARY_PATH=/home/pi/rpi-cam/deploy/bin
+   sudo systemctl edit mibee-eye --force
+   # Add: Environment=LD_LIBRARY_PATH=/home/pi/mibee-eye/deploy/bin
    sudo systemctl daemon-reload
-   sudo systemctl restart rpi-cam
+   sudo systemctl restart mibee-eye
    ```
 
 3. **Camera held by another process**: Stop MediaMTX
@@ -234,7 +234,7 @@ netstat -tlnp | grep 8080
 nc -ul 3702
 
 # Check ONVIF service logs
-journalctl -u rpi-cam -f
+journalctl -u mibee-eye -f
 
 # Test ONVIF endpoint manually
 curl -X POST http://localhost:8080/onvif/device_service
@@ -345,9 +345,9 @@ curl -s -w "\nHTTP Status: %{http_code}\n" http://localhost:8080/snapshot -o /de
    sudo apt install ffmpeg
    ```
 
-2. **Camera not running**: Ensure rpi-cam is active
+2. **Camera not running**: Ensure mibee-eye is active
    ```bash
-   sudo systemctl restart rpi-cam
+   sudo systemctl restart mibee-eye
    ```
 
 3. **Resolution issues**: Adjust snapshot parameters
@@ -362,12 +362,12 @@ curl -s -w "\nHTTP Status: %{http_code}\n" http://localhost:8080/snapshot -o /de
 - Web UI shows black video player
 - "HLS not available" message in web UI
 - Browser console shows hls.js errors
-- No .m3u8 or .ts files in /tmp/hls-rpi-cam/
+- No .m3u8 or .ts files in /tmp/hls-mibee-eye/
 
 ### Diagnosis
 ```bash
 # Check HLS output directory
-ls -la /tmp/hls-rpi-cam/
+ls -la /tmp/hls-mibee-eye/
 # Expected: stream.m3u8 + seg-*.ts files
 
 # Check ffmpeg process
@@ -376,8 +376,8 @@ ps aux | grep ffmpeg
 # Check HLS HTTP endpoint
 curl -s http://localhost:8088/hls/stream.m3u8
 
-# Check rpi-cam logs for HLS errors
-journalctl -u rpi-cam --grep "HLS"
+# Check mibee-eye logs for HLS errors
+journalctl -u mibee-eye --grep "HLS"
 ```
 
 ### Solutions
@@ -389,8 +389,8 @@ journalctl -u rpi-cam --grep "HLS"
    ```bash
    ffprobe rtsp://localhost:8554/stream
    ```
-3. **HLS server not started**: Check rpi-cam logs for "warning: HLS bridge not started"
-4. **Restart rpi-cam**: sudo systemctl restart rpi-cam
+3. **HLS server not started**: Check mibee-eye logs for "warning: HLS bridge not started"
+4. **Restart mibee-eye**: sudo systemctl restart mibee-eye
 5. **Check disk space**: /tmp must have free space for HLS segments:
    ```bash
    df -h /tmp
@@ -409,7 +409,7 @@ journalctl -u rpi-cam --grep "HLS"
 free -h
 
 # Check CPU usage
-top -bn1 | grep -E 'rpi-cam|mediamtx'
+top -bn1 | grep -E 'mibee-eye|mediamtx'
 
 # Check RTSP connections
 lsof -i :8554
@@ -437,13 +437,13 @@ ip -s link show wlan0
 3. **Monitor resources**: Add monitoring
    ```bash
    # Monitor memory every 5 seconds
-   watch -n 5 "free -h && ps aux | grep rpi-cam"
+   watch -n 5 "free -h && ps aux | grep mibee-eye"
    ```
 
 ## Out of Memory (OOM) Issues
 
 ### Symptoms
-- rpi-cam or ffmpeg process killed unexpectedly
+- mibee-eye or ffmpeg process killed unexpectedly
 - "Killed" in journalctl logs
 - dmesg shows "Out of memory" or "oom-killer"
 - System becomes unresponsive
@@ -461,7 +461,7 @@ ps aux --sort=-%mem | head -10
 ```
 
 ### Root Cause
-The Raspberry Pi 3B has only 905MB RAM. If another process consumes excessive memory (e.g. prometheus-node-exporter-collectors' apt_info.py using 124MB), the OOM killer will terminate the largest process, which may be ffmpeg (HLS) or mtxrpicam.
+The single-board computer has limited RAM. If another process consumes excessive memory (e.g. prometheus-node-exporter-collectors' apt_info.py using 124MB), the OOM killer will terminate the largest process, which may be ffmpeg (HLS) or mtxrpicam.
 
 ### Solutions
 1. **Check for cron/periodic jobs**: Disable unnecessary timers:
@@ -478,7 +478,7 @@ The Raspberry Pi 3B has only 905MB RAM. If another process consumes excessive me
 ### Enable Debug Logging
 ```bash
 # Set debug level via environment
-RPICAM_LOGGING_LEVEL=debug ./rpi-cam
+MIBEE_EYE_LOGGING_LEVEL=debug ./mibee-eye
 
 # Or in config.yaml
 logging:
@@ -488,25 +488,25 @@ logging:
 ### Verbose Mode Options
 ```bash
 # Enable ONVIF debug logging
-RPICAM_LOGGING_LEVEL=debug ./rpi-cam -onvif-debug
+MIBEE_EYE_LOGGING_LEVEL=debug ./mibee-eye -onvif-debug
 
 # Enable RTSP debug logging
-RPICAM_LOGGING_LEVEL=debug ./rpi-cam -rtsp-debug
+MIBEE_EYE_LOGGING_LEVEL=debug ./mibee-eye -rtsp-debug
 ```
 
 ### Log Analysis Tips
 ```bash
 # Follow logs in real-time
-journalctl -u rpi-cam -f
+journalctl -u mibee-eye -f
 
 # Filter error messages
-journalctl -u rpi-cam | grep ERROR
+journalctl -u mibee-eye | grep ERROR
 
 # Look for timeout patterns
-journalctl -u rpi-cam | grep -i timeout
+journalctl -u mibee-eye | grep -i timeout
 
 # Check for resource warnings
-journalctl -u rpi-cam | grep -i "memory\|cpu"
+journalctl -u mibee-eye | grep -i "memory\|cpu"
 ```
 
 ## Common Error Messages
@@ -563,7 +563,7 @@ echo "Camera Device:"
 ls -la /dev/video0 2>/dev/null || echo "No camera found"
 
 echo "Services:"
-systemctl is-active rpi-cam mediamtx
+systemctl is-active mibee-eye mediamtx
 
 echo "Network:"
 netstat -tlnp | grep -E '8554|8080|3702'
@@ -571,28 +571,28 @@ netstat -tlnp | grep -E '8554|8080|3702'
 echo "Web UI:"
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8088/
 echo "HLS Status:"
-ls /tmp/hls-rpi-cam/stream.m3u8 2>/dev/null && echo "HLS active" || echo "HLS inactive"
+ls /tmp/hls-mibee-eye/stream.m3u8 2>/dev/null && echo "HLS active" || echo "HLS inactive"
 
 echo "Memory:"
 free -h
 
 echo "Camera Process:"
-pgrep -f rpi-cam || echo "rpi-cam not running"
+pgrep -f mibee-eye || echo "mibee-eye not running"
 
 echo "Conflicting Processes:"
-lsof /dev/video0 2>/dev/null | grep -v rpi-cam || echo "No conflicts"
+lsof /dev/video0 2>/dev/null | grep -v mibee-eye || echo "No conflicts"
 ```
 
 echo "Encoder Status:"
-journalctl -u rpi-cam --since "5 minutes ago" | grep -i "x264\|encoder" | tail -3
+journalctl -u mibee-eye --since "5 minutes ago" | grep -i "x264\|encoder" | tail -3
 
 echo "Library Resolution:"
-LD_LIBRARY_PATH=~/rpi-cam/deploy/bin ldd ~/rpi-cam/deploy/bin/mtxrpicam 2>&1 | grep -E "found|libcamera"
+LD_LIBRARY_PATH=~/mibee-eye/deploy/bin ldd ~/mibee-eye/deploy/bin/mtxrpicam 2>&1 | grep -E "found|libcamera"
 
 ## Contact Support
 
 If issues persist:
-1. Check logs: `journalctl -u rpi-cam`
-2. Include system info: `uname -a`, `dpkg -l | grep rpi-cam`
+1. Check logs: `journalctl -u mibee-eye`
+2. Include system info: `uname -a`, `dpkg -l | grep mibee-eye`
 3. Provide exact error messages and reproduction steps
 4. Include configuration file (redact sensitive data)

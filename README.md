@@ -1,8 +1,8 @@
-# rpi-cam
+# MiBee Eye (蜂眼)
 
-[![CI](https://github.com/Mi-Bee-Studio/raspberrypi-camera/actions/workflows/ci.yml/badge.svg)](https://github.com/Mi-Bee-Studio/raspberrypi-camera/actions/workflows/ci.yml)
+[![CI](https://github.com/Mi-Bee-Studio/mibee-eye-raspi/actions/workflows/ci.yml/badge.svg)](https://github.com/Mi-Bee-Studio/mibee-eye-raspi/actions/workflows/ci.yml)
 [![Go Version](https://img.shields.io/badge/go-1.26-blue.svg)](https://golang.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/Mi-Bee-Studio/raspberrypi-camera/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/Mi-Bee-Studio/mibee-eye-raspi/blob/main/LICENSE)
 
 [中文文档](README_zh.md)
 
@@ -17,7 +17,7 @@
 </div>
 
 
-rpi-cam is a lightweight Go ONVIF camera service for Raspberry Pi. It provides ONVIF Device/Media/PTZ/Imaging services, RTSP streaming, RTMP push, and WS-Discovery for NVR/VMS integration.
+MiBee Eye is a lightweight Go ONVIF camera service for single-board computers (Raspberry Pi, Banana Pi, Orange Pi) with support for all CSI/USB cameras. It provides ONVIF Device/Media/PTZ/Imaging services, RTSP streaming, RTMP push, and WS-Discovery for NVR/VMS integration.
 
 ## Features
 
@@ -36,8 +36,8 @@ rpi-cam is a lightweight Go ONVIF camera service for Raspberry Pi. It provides O
 
 ```bash
 # Clone and build
-git clone https://github.com/Mi-Bee-Studio/raspberrypi-camera
-cd raspberrypi-camera
+git clone https://github.com/Mi-Bee-Studio/mibee-eye-raspi
+cd mibee-eye-raspi
 make build
 
 # Copy and configure
@@ -45,12 +45,12 @@ cp configs/config.example.yaml config.yaml
 # Edit config.yaml for your camera and network
 
 # Run directly
-./build/rpi-cam -config config.yaml
+./build/mibee-eye -config config.yaml
 
 # Or deploy with systemd
-sudo cp deploy/rpi-cam.service /etc/systemd/system/
+sudo cp deploy/mibee-eye.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now rpi-cam
+sudo systemctl enable --now mibee-eye
 ```
 
 ## Configuration
@@ -58,7 +58,7 @@ sudo systemctl enable --now rpi-cam
 See `configs/config.example.yaml` for all configuration options. Key settings include:
 
 - `camera.width/height` - Capture resolution (1280x720 default)
-- `camera.fps` - Frames per second (15 default for RPi 3B)
+- `camera.fps` - Frames per second (15 default for SBCs)
 - `camera.bitrate` - Video bitrate in bits per second
 - `rtsp.port` - RTSP streaming port (8554 default)
 - `onvif.port` - ONVIF HTTP/SOAP port (8080 default)
@@ -67,21 +67,21 @@ See `configs/config.example.yaml` for all configuration options. Key settings in
 - `web.port` - Web UI HTTP port (8088 default)
 - `onvif.username/password` - ONVIF authentication credentials
 
-Environment variables override any config setting with `RPICAM_` prefix:
+Environment variables override any config setting with `MIBEE_EYE_` prefix:
 ```bash
-RPICAM_ONVIF_PASSWORD=secret ./build/rpi-cam
+MIBEE_EYE_ONVIF_PASSWORD=secret ./build/mibee-eye
 ```
 
 ## Deployment
 
-Create a systemd service unit based on `deploy/rpi-cam.service`. Customize for your environment:
+Create a systemd service unit based on `deploy/mibee-eye.service`. Customize for your environment:
 
 ```bash
 # Install and configure
-sudo cp deploy/rpi-cam.service /etc/systemd/system/
+sudo cp deploy/mibee-eye.service /etc/systemd/system/
 # Edit paths and user for your setup
 sudo systemctl daemon-reload
-sudo systemctl enable --now rpi-cam
+sudo systemctl enable --now mibee-eye
 ```
 
 ## Web Admin UI
@@ -118,7 +118,7 @@ flowchart TB
         CAM["CSI/USB 相机"]
     end
 
-    subgraph rpi-cam
+    subgraph MiBee Eye
         CAP["相机捕获"]
         RTSP["RTSP 服务器"]
         HLS["HLS 桥接"]
@@ -148,7 +148,7 @@ Camera capture via CSI interface supports OV5647, IMX219, IMX708, IMX477 modules
 
 ### Performance Comparison
 
-| Metric | rpi-cam | MediaMTX | Improvement |
+| Metric | MiBee Eye | MediaMTX | Improvement |
 |--------|---------|----------|-------------|
 | Memory Usage | **15–25 MB** | ~45 MB | 45–67% reduction |
 | ONVIF Server | ✅ **Profile S** (Device/Media/PTZ/Imaging) | ❌ Not supported | — |
@@ -177,7 +177,7 @@ Built with pure Go — **zero CGO**. Camera capture uses MediaMTX's existing mtx
 # Build on workstation
 make build
 
-# Cross-compile for RPi 3B
+# Cross-compile for aarch64 SBCs
 make build GOOS=linux GOARCH=arm64
 
 # Run tests
