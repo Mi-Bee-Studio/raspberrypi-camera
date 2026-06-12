@@ -1,0 +1,18 @@
+[Unit]
+Description=MiBee Eye - ONVIF Camera Server
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+Conflicts=mediamtx.service
+
+[Service]
+Type=simple
+User=pi
+Environment=LD_LIBRARY_PATH=/home/pi/mibee-eye/deploy/bin
+WorkingDirectory=/home/pi/mibee-eye
+ExecStart=/home/pi/mibee-eye/mibee-eye -config /home/pi/mibee-eye/config.yaml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

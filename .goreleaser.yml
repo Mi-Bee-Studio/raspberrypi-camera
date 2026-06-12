@@ -2,7 +2,7 @@ version: 2
 
 builds:
   - main: ./cmd/server/main.go
-    binary: rpi-cam
+    binary: mibee-eye
     env:
       - CGO_ENABLED=0
     goos:
@@ -49,4 +49,4 @@ checksum:
 release:
   github:
     owner: Mi-Bee-Studio
-    name: raspberrypi-camera
+    name: mibee-eye-raspi

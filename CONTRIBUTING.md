@@ -1,6 +1,6 @@
 # Contributing
 
-Welcome! We're glad you want to contribute to the Raspberry Pi 3B Camera Service.
+Welcome! We're glad you want to contribute to the MiBee Eye Camera Service.
 
 ## Development Setup
 
