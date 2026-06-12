@@ -1,10 +1,10 @@
 [English](../architecture.md)
 
-# Architecture - rpi-cam ONVIF 相机服务器
+# Architecture - MiBee Eye ONVIF 相机服务器
 
 ## 系统概述
 
-rpi-cam 是一个轻量级的 Go 应用程序，为 Raspberry Pi 提供 ONVIF 兼容的相机服务。它用自定义实现替代 MediaMTX，以添加缺失的 ONVIF 服务器功能，同时保持低资源使用（约20MB RAM，实测：rpi-cam 9MB + mtxrpicam 10MB）和简化的部署。该系统支持 ONVIF Device/Media/PTZ/Imaging 服务、RTSP 流媒体、RTMP 推送和 WS-Discovery，用于 NVR 集成。
+MiBee Eye 是一个轻量级的 Go 应用程序，为树莓派、香蕉派、香橙派等单板计算机提供 ONVIF 兼容的相机服务。
 
 ## 组件架构
 
@@ -199,12 +199,12 @@ OV5647 相机 → mtxrpicam → H.264 NALU → 解析器 → AUHub → 订阅者
 
 || 进程 | RSS 内存 | 用途 |
 ||---------|----------|------|
-|| rpi-cam | ~9MB | Go 主进程（ONVIF + RTSP + 管道） |
+||| MiBee Eye | ~9MB | Go 主进程（ONVIF + RTSP + 管道） |
 || mtxrpicam | ~10MB | 相机捕获子进程 |
 || **ffmpeg (HLS)** | ~15MB | HLS 段生成器（仅在 HLS 激活时存在） |
 || **总计** | **~35MB** | |
 
-- **CPU**: rpi-cam ~2%，mtxrpicam ~12%，720p@15fps
+- **CPU**: MiBee Eye ~2%，mtxrpicam ~12%，720p@15fps
 - **网络**: 720p@15fps H.264 流 ~2Mbps
 
 ## 依赖项
@@ -222,7 +222,7 @@ OV5647 相机 → mtxrpicam → H.264 NALU → 解析器 → AUHub → 订阅者
 系统作为单个 systemd 服务运行，具有：
 
 - **进程隔离**: 相机捕获在子进程中，主服务在 Go 进程中
-- **资源使用**: RPi 3B 实测 ~20MB RAM
+- **资源使用**: SBC 实测 ~20MB RAM
 - **交叉编译**: 从 x86 工作站编译到 aarch64 RPi
 - **配置**: 基于 YAML 的配置，支持环境变量覆盖
 - **监控**: 用于操作可见性的 Prometheus 指标

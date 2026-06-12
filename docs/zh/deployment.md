@@ -1,13 +1,13 @@
 [English](../deployment.md)
 
-# RPi-CAM ONVIF 服务器部署指南
+# MiBee Eye ONVIF 服务器部署指南
 
-本指南涵盖 rpi-cam ONVIF 相机服务在 Raspberry Pi 上的部署，包括从 MediaMTX 迁移以及与 NVR 系统的集成。
+本指南涵盖 MiBee Eye ONVIF 相机服务在树莓派、香蕉派、香橙派等单板计算机上的部署，包括从 MediaMTX 迁移以及与 NVR 系统的集成。
 
 ## 前置要求
 
 ### 目标设备要求
-- Raspberry Pi 3B（或其他 ARM64 设备）
+- 树莓派 3B/4/5、香蕉派 M5、香橙派 5 等 ARM64 设备
 - 已连接的相机模块（OV5647、IMX219、IMX477 或 USB）
 - Debian 13（trixie），内核 6.12.75+rpt-rpi-v8
 - 最少 905MB 内存
@@ -23,7 +23,7 @@
 
 ### mtxrpicam 二进制文件包
 
-rpi-cam 使用来自 [mediamtx-rpicamera](https://github.com/bluenviron/mediamtx-rpicamera) 项目的 `mtxrpicam` 进行摄像头捕获。此二进制文件捆绑了自己的 `libcamera` 共享库，以避免与系统安装的 libcamera 产生版本冲突。
+MiBee Eye 使用来自 [mediamtx-rpicamera](https://github.com/bluenviron/mediamtx-rpicamera) 项目的 `mtxrpicam` 进行摄像头捕获。此二进制文件捆绑了自己的 `libcamera` 共享库，以避免与系统安装的 libcamera 产生版本冲突。
 
 **`deploy/bin/` 中所需的文件：**
 ```
@@ -48,8 +48,8 @@ gh release download v2.6.0 --repo bluenviron/mediamtx-rpicamera \
 tar xzf /tmp/mtxrpicam_64.tar.gz -C /tmp/
 
 # 部署到目标设备
-scp -r /tmp/mtxrpicam_64/* <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/deploy/bin/
-scp /tmp/mtxrpicam_64/mtxrpicam <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/deploy/bin/mtxrpicam
+scp -r /tmp/mtxrpicam_64/* <your-rpi-user>@<your-rpi-ip>:~/mibee-eye/deploy/bin/
+scp /tmp/mtxrpicam_64/mtxrpicam <your-rpi-user>@<your-rpi-ip>:~/mibee-eye/deploy/bin/mtxrpicam
 ```
 
 **为什么捆绑 libcamera？** Debian 13 附带的 libcamera 0.7.0（`libcamera.so.0.7`），但 mtxrpicam 编译时链接的是特定版本的 libcamera（`libcamera.so.9.9`）。捆绑的库避免了这种版本不匹配。如果遇到 `encoder_create(): unable to activate output stream` 错误，请确保捆绑的库文件在 `deploy/bin/` 中，并且 `LD_LIBRARY_PATH` 设置正确。
@@ -65,14 +65,14 @@ ssh <your-rpi-user>@<your-rpi-ip> 'sudo apt install -y ffmpeg'
 
 ```bash
 # 克隆仓库
-git clone https://github.com/Mi-Bee-Studio/raspberrypi-camera
-cd raspberrypi-camera
+git clone https://github.com/Mi-Bee-Studio/mibee-eye-raspi
+cd mibee-eye-raspi
 
 # 构建 ARM64 架构版本
 make build GOOS=linux GOARCH=arm64
 
 # 验证二进制文件创建
-ls -la build/rpi-cam
+ls -la build/mibee-eye
 ```
 
 ## 安装步骤
@@ -81,7 +81,7 @@ ls -la build/rpi-cam
 
 ```bash
 # 在目标设备上创建工作目录
-ssh <your-rpi-user>@<your-rpi-ip> "mkdir -p ~/rpi-cam"
+ssh <your-rpi-user>@<your-rpi-ip> "mkdir -p ~/mibee-eye"
 
 # 停止 MediaMTX 以释放相机访问权限
 ssh <your-rpi-user>@<your-rpi-ip> 'sudo systemctl stop mediamtx'
@@ -92,26 +92,26 @@ ssh <your-rpi-user>@<your-rpi-ip> 'sudo systemctl disable mediamtx'
 
 ```bash
 # 复制二进制文件和配置
-scp build/rpi-cam <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/
-scp configs/config.example.yaml <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/config.yaml
+scp build/mibee-eye <your-rpi-user>@<your-rpi-ip>:~/mibee-eye/
+scp configs/config.example.yaml <your-rpi-user>@<your-rpi-ip>:~/mibee-eye/config.yaml
 
 # 复制 systemd 服务单元文件
-scp deploy/rpi-cam.service <your-rpi-user>@<your-rpi-ip>:/tmp/
+scp deploy/mibee-eye.service <your-rpi-user>@<your-rpi-ip>:/tmp/
 
 # 复制摄像头捕获依赖
-scp -r deploy/bin/ <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/deploy/
+scp -r deploy/bin/ <your-rpi-user>@<your-rpi-ip>:~/mibee-eye/deploy/
 ```
 
 ### 3. 安装 Systemd 服务
 
 ```bash
 # 安装服务并启用
-ssh <your-rpi-user>@<your-rpi-ip> "sudo mv /tmp/rpi-cam.service /etc/systemd/system/"
+ssh <your-rpi-user>@<your-rpi-ip> "sudo mv /tmp/mibee-eye.service /etc/systemd/system/"
 ssh <your-rpi-user>@<your-rpi-ip> "sudo systemctl daemon-reload"
-ssh <your-rpi-user>@<your-rpi-ip> "sudo systemctl enable rpi-cam"
+ssh <your-rpi-user>@<your-rpi-ip> "sudo systemctl enable mibee-eye"
 ```
 
-> **注意：** systemd 服务单元中设置了 `Environment=LD_LIBRARY_PATH=/home/pi/rpi-cam/deploy/bin`，以便运行时找到捆绑的 libcamera 库。如果您安装到不同路径，请相应更新服务文件中的此值。
+> **注意：** systemd 服务单元中设置了 `Environment=LD_LIBRARY_PATH=/home/pi/mibee-eye/deploy/bin`，以便运行时找到捆绑的 libcamera 库。如果您安装到不同路径，请相应更新服务文件中的此值。
 
 ### 4. 自动化部署
 
@@ -121,7 +121,7 @@ ssh <your-rpi-user>@<your-rpi-ip> "sudo systemctl enable rpi-cam"
 
 # 脚本会自动执行：
 # 1. 停止并禁用 MediaMTX
-# 2. 部署 rpi-cam 二进制文件和配置
+# 2. 部署 mibee-eye 二进制文件和配置
 # 3. 安装 systemd 服务
 # 4. 启用服务
 ```
@@ -172,10 +172,10 @@ logging:
 
 ```bash
 # 使用特定密码启动
-RPICAM_ONVIF_PASSWORD=secret123 ./build/rpi-cam -config config.yaml
+MIBEE_EYE_ONVIF_PASSWORD=secret123 ./build/mibee-eye -config config.yaml
 
 # 调试日志
-RPICAM_LOGGING_LEVEL=debug ./build/rpi-cam -config config.yaml
+MIBEE_EYE_LOGGING_LEVEL=debug ./build/mibee-eye -config config.yaml
 ```
 
 ## 启动服务
@@ -184,22 +184,22 @@ RPICAM_LOGGING_LEVEL=debug ./build/rpi-cam -config config.yaml
 
 ```bash
 # 启动服务
-sudo systemctl start rpi-cam
+sudo systemctl start mibee-eye
 
 # 检查状态
-systemctl status rpi-cam
+systemctl status mibee-eye
 
 # 查看日志
-journalctl -u rpi-cam -f
+journalctl -u mibee-eye -f
 
 # 启用开机自启动
-sudo systemctl enable rpi-cam
+sudo systemctl enable mibee-eye
 
 # 重启服务
-sudo systemctl restart rpi-cam
+sudo systemctl restart mibee-eye
 
 # 停止服务
-sudo systemctl stop rpi-cam
+sudo systemctl stop mibee-eye
 ```
 
 ## 验证
@@ -208,10 +208,10 @@ sudo systemctl stop rpi-cam
 
 ```bash
 # 检查服务是否运行
-systemctl status rpi-cam
+systemctl status mibee-eye
 
 # 验证日志中无错误
-journalctl -u rpi-cam --since "5 minutes ago"
+journalctl -u mibee-eye --since "5 minutes ago"
 ```
 
 ### 2. RTSP 流测试
@@ -283,7 +283,7 @@ file snapshot.jpg
 
 ```bash
 # 检查内存使用（目标：总计约 20MB）
-ps -o pid,rss,comm -p $(pgrep -f "rpi-cam|mtxrpicam")
+ps -o pid,rss,comm -p $(pgrep -f "mibee-eye|mtxrpicam")
 
 # 检查 Web UI
 curl -s -o /dev/null -w "%{http_code}" http://localhost:8088/
@@ -316,10 +316,10 @@ dtoverlay=ov5647  # 或 imx219, imx477 等
 **解决方案：**
 ```bash
 # 验证捆绑的库文件是否存在
-ls ~/rpi-cam/deploy/bin/libcamera*.so*
+ls ~/mibee-eye/deploy/bin/libcamera*.so*
 
 # 验证服务中的 LD_LIBRARY_PATH
-grep LD_LIBRARY_PATH /etc/systemd/system/rpi-cam.service
+grep LD_LIBRARY_PATH /etc/systemd/system/mibee-eye.service
 
 # 如果库文件缺失，从 mediamtx-rpicamera 发布版本重新部署
 # 参见上方「摄像头捕获依赖」章节
@@ -341,7 +341,7 @@ sudo ufw allow 8080/tcp
 **解决方案：** 验证 RTSP 端口配置和服务状态：
 ```bash
 # 检查 RTSP 服务器日志
-journalctl -u rpi-cam --grep "RTSP"
+journalctl -u mibee-eye --grep "RTSP"
 
 # 测试端口连接性
 telnet <your-rpi-ip> 8554
@@ -356,7 +356,7 @@ telnet <your-rpi-ip> 8554
 yamllint config.yaml
 
 # 检查配置值
-./build/rpi-cam --validate-config --config config.yaml
+./build/mibee-eye --validate-config --config config.yaml
 ```
 
 **问题：** 无效的 ONVIF 密码
@@ -386,7 +386,7 @@ make service-restart
 
 ```bash
 # 备份当前配置
-sudo cp /etc/systemd/system/rpi-cam.service ~/backups/
+sudo cp /etc/systemd/system/mibee-eye.service ~/backups/
 cp config.yaml ~/backups/config.yaml.$(date +%Y%m%d).backup
 ```
 
@@ -394,6 +394,6 @@ cp config.yaml ~/backups/config.yaml.$(date +%Y%m%d).backup
 
 如需额外支持：
 - 查看故障排除文档
-- 使用 `journalctl -u rpi-cam -f` 检查服务日志
+- 使用 `journalctl -u mibee-eye -f` 检查服务日志
 - 使用 `--validate-config` 标志验证配置
-- 使用调试日志进行测试：`RPICAM_LOGGING_LEVEL=debug`
+- 使用调试日志进行测试：`MIBEE_EYE_LOGGING_LEVEL=debug`

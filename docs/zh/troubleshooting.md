@@ -1,14 +1,14 @@
-# rpi-cam 故障排除指南
+# MiBee Eye 故障排除指南
 
 [English](../troubleshooting.md)
 
-本文档涵盖了 rpi-cam（树莓 Pi ONVIF 相机服务）的常见问题和解决方案。
+本文档涵盖了 mibee-eye（树莓 Pi ONVIF 相机服务）的常见问题和解决方案。
 
 ## 快速健康检查
 
 ```bash
-# 检查 rpi-cam 是否运行
-systemctl status rpi-cam
+# 检查 mibee-eye 是否运行
+systemctl status mibee-eye
 
 # 检查相机设备
 ls -la /dev/video0
@@ -32,12 +32,12 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:8088/
 curl -s http://localhost:8088/hls/stream.m3u8 | head -5
 
 # 检查摄像头编码器是否正常工作（日志中应有 x264）
-journalctl -u rpi-cam --since "1 minute ago" | grep -i "x264\|encoder\|h264"
+journalctl -u mibee-eye --since "1 minute ago" | grep -i "x264\|encoder\|h264"
 ## 相机检测问题
 
 ### 症状
 - NVR 中找不到相机
-- rpi-cam 日志显示 "camera not detected"
+- MiBee Eye 日志显示 "camera not detected"
 - 流显示黑屏
 
 ### 诊断
@@ -109,7 +109,7 @@ grep -A2 'web:' config.yaml
    ```
 2. **清除浏览器缓存**：基于令牌的身份验证在 localStorage 中存储会话。清除站点的浏览器数据。
 3. **检查配置**：确保 config.yaml 中 web.enabled: true
-4. **重启服务**：sudo systemctl restart rpi-cam
+4. **重启服务**：sudo systemctl restart mibee-eye
 ## 摄像头编码器问题
 
 ### 症状
@@ -120,14 +120,14 @@ grep -A2 'web:' config.yaml
 ### 诊断
 ```bash
 # 检查 mtxrpicam 是否能找到 libcamera
-LD_LIBRARY_PATH=/home/pi/rpi-cam/deploy/bin ldd ~/rpi-cam/deploy/bin/mtxrpicam
+LD_LIBRARY_PATH=/home/pi/mibee-eye/deploy/bin ldd ~/mibee-eye/deploy/bin/mtxrpicam
 # 如果显示 "libcamera.so.9.9 => not found"，说明捆绑库缺失
 
 # 检查捆绑的 libcamera 文件是否存在
-ls -la ~/rpi-cam/deploy/bin/libcamera*.so*
+ls -la ~/mibee-eye/deploy/bin/libcamera*.so*
 
 # 检查 systemd 服务中的 LD_LIBRARY_PATH
-grep LD_LIBRARY_PATH /etc/systemd/system/rpi-cam.service
+grep LD_LIBRARY_PATH /etc/systemd/system/mibee-eye.service
 
 # 直接使用 rpicam-vid 测试摄像头
 rpicam-vid -t 1000 --width 1280 --height 720 -o /dev/null
@@ -148,23 +148,23 @@ mtxrpicam 二进制文件动态链接的是 `libcamera.so.9.9`，这与系统安
    tar xzf mtxrpicam_64.tar.gz
    
    # 复制捆绑库到设备
-   scp mtxrpicam_64/libcamera*.so* <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/deploy/bin/
-   scp mtxrpicam_64/mtxrpicam <your-rpi-user>@<your-rpi-ip>:~/rpi-cam/deploy/bin/
+   scp mtxrpicam_64/libcamera*.so* <your-rpi-user>@<your-rpi-ip>:~/mibee-eye/deploy/bin/
+   scp mtxrpicam_64/mtxrpicam <your-rpi-user>@<your-rpi-ip>:~/mibee-eye/deploy/bin/
    
    # 重启服务
-   sudo systemctl restart rpi-cam
+   sudo systemctl restart mibee-eye
    ```
 
 2. **LD_LIBRARY_PATH 未设置**：验证 systemd 服务配置
    ```bash
    # 应包含：Environment=LD_LIBRARY_PATH=/path/to/deploy/bin
-   systemctl cat rpi-cam
+   systemctl cat mibee-eye
    
    # 如果缺失，编辑服务文件
-   sudo systemctl edit rpi-cam --force
-   # 添加：Environment=LD_LIBRARY_PATH=/home/pi/rpi-cam/deploy/bin
+   sudo systemctl edit mibee-eye --force
+   # 添加：Environment=LD_LIBRARY_PATH=/home/pi/mibee-eye/deploy/bin
    sudo systemctl daemon-reload
-   sudo systemctl restart rpi-cam
+   sudo systemctl restart mibee-eye
    ```
 
 3. **摄像头被其他进程占用**：停止 MediaMTX
@@ -234,7 +234,7 @@ netstat -tlnp | grep 8080
 nc -ul 3702
 
 # 检查 ONVIF 服务日志
-journalctl -u rpi-cam -f
+journalctl -u mibee-eye -f
 
 # 手动测试 ONVIF 端点
 curl -X POST http://localhost:8080/onvif/device_service
@@ -345,9 +345,9 @@ curl -s -w "\nHTTP 状态: %{http_code}\n" http://localhost:8080/snapshot -o /de
    sudo apt install ffmpeg
    ```
 
-2. **相机未运行**：确保 rpi-cam 处于活动状态
+2. **相机未运行**：确保 MiBee Eye 处于活动状态
    ```bash
-   sudo systemctl restart rpi-cam
+   sudo systemctl restart mibee-eye
    ```
 
 3. **分辨率问题**：调整快照参数
@@ -363,12 +363,12 @@ curl -s -w "\nHTTP 状态: %{http_code}\n" http://localhost:8080/snapshot -o /de
 - Web UI 显示黑色视频播放器
 - Web UI 中显示 "HLS not available" 消息
 - 浏览器控制台显示 hls.js 错误
-- /tmp/hls-rpi-cam/ 中没有 .m3u8 或 .ts 文件
+- /tmp/hls-mibee-eye/ 中没有 .m3u8 或 .ts 文件
 
 ### 诊断
 ```bash
 # 检查 HLS 输出目录
-ls -la /tmp/hls-rpi-cam/
+ls -la /tmp/hls-mibee-eye/
 # 期望：stream.m3u8 + seg-*.ts 文件
 
 # 检查 ffmpeg 进程
@@ -377,8 +377,8 @@ ps aux | grep ffmpeg
 # 检查 HLS HTTP 端点
 curl -s http://localhost:8088/hls/stream.m3u8
 
-# 检查 rpi-cam 日志中的 HLS 错误
-journalctl -u rpi-cam --grep "HLS"
+# 检查 MiBee Eye 日志中的 HLS 错误
+journalctl -u mibee-eye --grep "HLS"
 ```
 
 ### 解决方案
@@ -390,8 +390,8 @@ journalctl -u rpi-cam --grep "HLS"
    ```bash
    ffprobe rtsp://localhost:8554/stream
    ```
-3. **HLS 服务器未启动**：检查 rpi-cam 日志中的 "warning: HLS bridge not started"
-4. **重启 rpi-cam**：sudo systemctl restart rpi-cam
+3. **HLS 服务器未启动**：检查 MiBee Eye 日志中的 "warning: HLS bridge not started"
+4. **重启 MiBee Eye**：sudo systemctl restart mibee-eye
 5. **检查磁盘空间**：/tmp 必须有可用空间用于 HLS 段：
    ```bash
    df -h /tmp
@@ -410,7 +410,7 @@ journalctl -u rpi-cam --grep "HLS"
 free -h
 
 # 检查 CPU 使用
-top -bn1 | grep -E 'rpi-cam|mediamtx'
+top -bn1 | grep -E 'mibee-eye|mediamtx'
 
 # 检查 RTSP 连接
 lsof -i :8554
@@ -438,13 +438,13 @@ ip -s link show wlan0
 3. **监控资源**：添加监控
    ```bash
    # 每 5 秒监控内存
-   watch -n 5 "free -h && ps aux | grep rpi-cam"
+   watch -n 5 "free -h && ps aux | grep mibee-eye"
    ```
 
 ## 内存不足 (OOM) 问题
 
 ### 症状
-- rpi-cam 或 ffmpeg 进程被意外终止
+- mibee-eye 或 ffmpeg 进程被意外终止
 - journalctl 日志中显示 "Killed"
 - dmesg 显示 "Out of memory" 或 "oom-killer"
 - 系统变得无响应
@@ -479,7 +479,7 @@ ps aux --sort=-%mem | head -10
 ### 启用调试日志
 ```bash
 # 通过环境设置调试级别
-RPICAM_LOGGING_LEVEL=debug ./rpi-cam
+MIBEE_EYE_LOGGING_LEVEL=debug ./mibee-eye
 
 # 或者在 config.yaml 中
 logging:
@@ -489,25 +489,25 @@ logging:
 ### 详细模式选项
 ```bash
 # 启用 ONVIF 调试日志
-RPICAM_LOGGING_LEVEL=debug ./rpi-cam -onvif-debug
+MIBEE_EYE_LOGGING_LEVEL=debug ./mibee-eye -onvif-debug
 
 # 启用 RTSP 调试日志
-RPICAM_LOGGING_LEVEL=debug ./rpi-cam -rtsp-debug
+MIBEE_EYE_LOGGING_LEVEL=debug ./mibee-eye -rtsp-debug
 ```
 
 ### 日志分析技巧
 ```bash
 # 实时查看日志
-journalctl -u rpi-cam -f
+journalctl -u mibee-eye -f
 
 # 过滤错误消息
-journalctl -u rpi-cam | grep ERROR
+journalctl -u mibee-eye | grep ERROR
 
 # 查找超时模式
-journalctl -u rpi-cam | grep -i timeout
+journalctl -u mibee-eye | grep -i timeout
 
 # 检查资源警告
-journalctl -u rpi-cam | grep -i "memory\|cpu"
+journalctl -u mibee-eye | grep -i "memory\|cpu"
 ```
 
 ## 常见错误消息
@@ -564,7 +564,7 @@ echo "相机设备："
 ls -la /dev/video0 2>/dev/null || echo "未找到相机"
 
 echo "服务："
-systemctl is-active rpi-cam mediamtx
+systemctl is-active mibee-eye mediamtx
 
 echo "网络："
 netstat -tlnp | grep -E '8554|8080|3702'
@@ -572,28 +572,28 @@ netstat -tlnp | grep -E '8554|8080|3702'
 echo "Web UI:"
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8088/
 echo "HLS 状态:"
-ls /tmp/hls-rpi-cam/stream.m3u8 2>/dev/null && echo "HLS 活动" || echo "HLS 未活动"
+ls /tmp/hls-mibee-eye/stream.m3u8 2>/dev/null && echo "HLS 活动" || echo "HLS 未活动"
 
 echo "内存："
 free -h
 
 echo "相机进程："
-pgrep -f rpi-cam || echo "rpi-cam 未运行"
+pgrep -f mibee-eye || echo "MiBee Eye 未运行"
 
 echo "冲突进程："
-lsof /dev/video0 2>/dev/null | grep -v rpi-cam || echo "无冲突"
+lsof /dev/video0 2>/dev/null | grep -v mibee-eye || echo "无冲突"
 ```
 
 echo "编码器状态："
-journalctl -u rpi-cam --since "5 minutes ago" | grep -i "x264\|encoder" | tail -3
+journalctl -u mibee-eye --since "5 minutes ago" | grep -i "x264\|encoder" | tail -3
 
 echo "库解析："
-LD_LIBRARY_PATH=~/rpi-cam/deploy/bin ldd ~/rpi-cam/deploy/bin/mtxrpicam 2>&1 | grep -E "found|libcamera"
+LD_LIBRARY_PATH=~/mibee-eye/deploy/bin ldd ~/mibee-eye/deploy/bin/mtxrpicam 2>&1 | grep -E "found|libcamera"
 
 ## 联系支持
 
 如果问题持续存在：
-1. 检查日志：`journalctl -u rpi-cam`
-2. 包含系统信息：`uname -a`，`dpkg -l | grep rpi-cam`
+1. 检查日志：`journalctl -u mibee-eye`
+2. 包含系统信息：`uname -a`，`dpkg -l | grep mibee-eye`
 3. 提供确切的错误消息和重现步骤
 4. 包含配置文件（删除敏感数据）

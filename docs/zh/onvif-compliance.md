@@ -1,7 +1,7 @@
 [English](../onvif-compliance.md)
 # ONVIF 合规性参考
 
-本文档提供了 rpi-cam ONVIF 相机服务的详细合规性信息。该实现提供了 ONVIF Device/Media/PTZ/Imaging 服务、WS-Discovery 支持和 WS-Security 身份验证，用于 NVR 集成。
+本文档提供了 mibee-eye ONVIF 相机服务的详细合规性信息。该实现提供了 ONVIF Device/Media/PTZ/Imaging 服务、WS-Discovery 支持和 WS-Security 身份验证，用于 NVR 集成。
 
 ## ONVIF Profile S 合规性
 
@@ -30,7 +30,7 @@
 ```yaml
 Manufacturer: "Raspberry Pi"
 Model: "Camera V1" 
-Firmware: "rpi-cam-v1.0.0"
+Firmware: "mibee-eye-v1.0.0"
 SerialNumber: "OV5647-SERIAL"
 HardwareId: "OV5647"
 ```

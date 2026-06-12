@@ -2,7 +2,7 @@
 
 [English](../configuration.md)
 
-rpi-cam 配置采用 YAML 格式，控制摄像头服务的所有方面，包括捕获设置、流媒体协议和设备标识。
+MiBee Eye 配置采用 YAML 格式，控制摄像头服务的所有方面，包括捕获设置、流媒体协议和设备标识。
 
 ## 配置文件
 
@@ -210,75 +210,75 @@ logging:
 
 ## 环境变量覆盖
 
-所有配置值都可以使用 `RPICAM_` 前缀的环境变量覆盖。这对于部署、测试和容器化环境很有用。
+所有配置值都可以使用 `MIBEE_EYE_` 前缀的环境变量覆盖。这对于部署、测试和容器化环境很有用。
 
 ### 格式
-环境变量遵循模式：`RPICAM_<部分>_<字段>`
+环境变量遵循模式：`MIBEE_EYE_<部分>_<字段>`
 
 ### 示例
 ```bash
 # 覆盖摄像头分辨率
-RPICAM_CAMERA_WIDTH=1920 RPICAM_CAMERA_HEIGHT=1080 ./rpi-cam
+MIBEE_EYE_CAMERA_WIDTH=1920 MIBEE_EYE_CAMERA_HEIGHT=1080 ./mibee-eye
 
 # 为生产环境设置 ONVIF 密码
-RPICAM_ONVIF_PASSWORD=securepassword123 ./rpi-cam
+MIBEE_EYE_ONVIF_PASSWORD=securepassword123 ./mibee-eye
 
 # 更改 RTSP 端口
-RPICAM_RTSP_PORT=554 ./rpi-cam
+MIBEE_EYE_RTSP_PORT=554 ./mibee-eye
 
 # 启用调试日志
 
-RPICAM_LOGGING_LEVEL=debug ./rpi-cam
+MIBEE_EYE_LOGGING_LEVEL=debug ./mibee-eye
 
 # Web UI 访问和凭据
-RPICAM_WEB_ENABLED=true ./rpi-cam
+MIBEE_EYE_WEB_ENABLED=true ./mibee-eye
 
 # 设置 Web UI 凭据（独立于 ONVIF）
-RPICAM_WEB_USERNAME=admin RPICAM_WEB_PASSWORD=webpass ./rpi-cam
+MIBEE_EYE_WEB_USERNAME=admin MIBEE_EYE_WEB_PASSWORD=webpass ./mibee-eye
 # 为生产环境设置 ONVIF 密码
-RPICAM_ONVIF_PASSWORD=securepassword123 ./rpi-cam
+MIBEE_EYE_ONVIF_PASSWORD=securepassword123 ./mibee-eye
 # 设置设备信息
-RPICAM_DEVICE_NAME="Office Camera" ./rpi-cam
+MIBEE_EYE_DEVICE_NAME="Office Camera" ./mibee-eye
 ```
 
 # 设置设备信息
-RPICAM_DEVICE_NAME="Office Camera" ./rpi-cam
+MIBEE_EYE_DEVICE_NAME="Office Camera" ./mibee-eye
 ```
 
 ### 所有环境变量
 
 | 部分 | 字段 | 环境变量 |
 |------|------|----------|
-| **camera** | bin_path | `RPICAM_CAMERA_BINPATH` |
-| | device | `RPICAM_CAMERA_DEVICE` |
-| | width | `RPICAM_CAMERA_WIDTH` |
-| | height | `RPICAM_CAMERA_HEIGHT` |
-| | fps | `RPICAM_CAMERA_FPS` |
-| | codec | `RPICAM_CAMERA_CODEC` |
-| | bitrate | `RPICAM_CAMERA_BITRATE` |
-| | brightness | `RPICAM_CAMERA_BRIGHTNESS` |
-| | contrast | `RPICAM_CAMERA_CONTRAST` |
-| | saturation | `RPICAM_CAMERA_SATURATION` |
-| | sharpness | `RPICAM_CAMERA_SHARPNESS` |
-| **rtsp** | port | `RPICAM_RTSP_PORT` |
-| | username | `RPICAM_RTSP_USERNAME` |
-| | password | `RPICAM_RTSP_PASSWORD` |
-| **onvif** | port | `RPICAM_ONVIF_PORT` |
-| | username | `RPICAM_ONVIF_USERNAME` |
-| | password | `RPICAM_ONVIF_PASSWORD` |
-| **rtmp** | enabled | `RPICAM_RTMP_ENABLED` |
-| | url | `RPICAM_RTMP_URL` |
-| **device** | name | `RPICAM_DEVICE_NAME` |
-| | manufacturer | `RPICAM_DEVICE_MANUFACTURER` |
-| | model | `RPICAM_DEVICE_MODEL` |
-| | firmware | `RPICAM_DEVICE_FIRMWARE` |
-| | hardware_id | `RPICAM_DEVICE_HARDWAREID` |
-| | serial_number | `RPICAM_DEVICE_SERIALNUMBER` |
-| **logging** | level | `RPICAM_LOGGING_LEVEL` |
-  | **web** | enabled | `RPICAM_WEB_ENABLED` |
-  | | port | `RPICAM_WEB_PORT` |
-  | | username | `RPICAM_WEB_USERNAME` |
-  | | password | `RPICAM_WEB_PASSWORD` |
+| **camera** | bin_path | `MIBEE_EYE_CAMERA_BINPATH` |
+| | device | `MIBEE_EYE_CAMERA_DEVICE` |
+| | width | `MIBEE_EYE_CAMERA_WIDTH` |
+| | height | `MIBEE_EYE_CAMERA_HEIGHT` |
+| | fps | `MIBEE_EYE_CAMERA_FPS` |
+| | codec | `MIBEE_EYE_CAMERA_CODEC` |
+| | bitrate | `MIBEE_EYE_CAMERA_BITRATE` |
+| | brightness | `MIBEE_EYE_CAMERA_BRIGHTNESS` |
+| | contrast | `MIBEE_EYE_CAMERA_CONTRAST` |
+| | saturation | `MIBEE_EYE_CAMERA_SATURATION` |
+| | sharpness | `MIBEE_EYE_CAMERA_SHARPNESS` |
+| **rtsp** | port | `MIBEE_EYE_RTSP_PORT` |
+| | username | `MIBEE_EYE_RTSP_USERNAME` |
+| | password | `MIBEE_EYE_RTSP_PASSWORD` |
+| **onvif** | port | `MIBEE_EYE_ONVIF_PORT` |
+| | username | `MIBEE_EYE_ONVIF_USERNAME` |
+| | password | `MIBEE_EYE_ONVIF_PASSWORD` |
+| **rtmp** | enabled | `MIBEE_EYE_RTMP_ENABLED` |
+| | url | `MIBEE_EYE_RTMP_URL` |
+| **device** | name | `MIBEE_EYE_DEVICE_NAME` |
+| | manufacturer | `MIBEE_EYE_DEVICE_MANUFACTURER` |
+| | model | `MIBEE_EYE_DEVICE_MODEL` |
+| | firmware | `MIBEE_EYE_DEVICE_FIRMWARE` |
+| | hardware_id | `MIBEE_EYE_DEVICE_HARDWAREID` |
+| | serial_number | `MIBEE_EYE_DEVICE_SERIALNUMBER` |
+| **logging** | level | `MIBEE_EYE_LOGGING_LEVEL` |
+  |  | **web** | enabled | `MIBEE_EYE_WEB_ENABLED` |
+  |  | | port | `MIBEE_EYE_WEB_PORT` |
+  |  | | username | `MIBEE_EYE_WEB_USERNAME` |
+  |  | | password | `MIBEE_EYE_WEB_PASSWORD` |
 
 ## 示例配置
 
@@ -470,7 +470,7 @@ web:
 
 4. **网络**：RTSP 流媒体可能消耗大量带宽。确保您的网络基础设施能够处理所选的比特率。
 
-5. **调试**：使用 `RPICAM_LOGGING_LEVEL=debug` 来解决配置问题。
+5. **调试**：使用 `MIBEE_EYE_LOGGING_LEVEL=debug` 来解决配置问题。
 
 6. **环境变量**：使用环境变量存储像密码这样的敏感数据，避免将它们存储在配置文件中。
 
