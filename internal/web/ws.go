@@ -19,10 +19,19 @@ const (
 	wsMaxMsgSize = 512
 )
 
+func checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true // Non-browser clients (curl, scripts, tools)
+	}
+	// Allow if origin matches the request Host
+	return origin == "http://"+r.Host || origin == "https://"+r.Host
+}
+
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
+	CheckOrigin:     checkOrigin,
 }
 
 // wsHub maintains a set of active WebSocket connections and broadcasts events.
@@ -32,6 +41,7 @@ type wsHub struct {
 	clients map[*websocket.Conn]struct{}
 	events  chan wsEvent
 	done    chan struct{}
+	closeOnce sync.Once
 }
 
 func newWSHub(logger *log.Logger) *wsHub {
@@ -66,21 +76,35 @@ func (h *wsHub) run(ctx context.Context) {
 				continue
 			}
 
+			// Collect failed connections under read lock, then remove under write lock.
 			h.mu.RLock()
+			var failed []*websocket.Conn
 			for conn := range h.clients {
 				if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-					conn.Close()
-					delete(h.clients, conn)
+					failed = append(failed, conn)
 				}
 			}
 			h.mu.RUnlock()
+
+			if len(failed) > 0 {
+				h.mu.Lock()
+				for _, conn := range failed {
+					if _, still := h.clients[conn]; still {
+						conn.Close()
+						delete(h.clients, conn)
+					}
+				}
+				h.mu.Unlock()
+			}
 		}
 	}
 }
 
 // close shuts down the hub and closes all connections.
 func (h *wsHub) close() {
-	close(h.done)
+	h.closeOnce.Do(func() {
+		close(h.done)
+	})
 	h.mu.Lock()
 	for conn := range h.clients {
 		conn.Close()

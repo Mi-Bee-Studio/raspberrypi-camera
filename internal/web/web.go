@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/camera"
 	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/hls"
@@ -47,11 +48,13 @@ type Server struct {
 	logger *log.Logger
 	mux    *http.ServeMux
 	hub    *wsHub
+	loginLimiter *loginRateLimiter
 	server *http.Server
 
 	username string
 	password string
 	sessions *SessionStore
+	startTime time.Time
 }
 
 // New creates a new web server.
@@ -76,6 +79,7 @@ func New(cfg Config) *Server {
 		username: username,
 		password: password,
 		sessions: NewSessionStore(username, password),
+		loginLimiter: &loginRateLimiter{attempts: make(map[string]*rateLimitEntry)},
 	}
 }
 
@@ -112,12 +116,13 @@ func (s *Server) Start(ctx context.Context) error {
 		})
 	}
 
+	s.startTime = time.Now()
 	s.registerRoutes()
 
 	addr := net.JoinHostPort("0.0.0.0", strconv.Itoa(port))
 	s.server = &http.Server{
 		Addr:    addr,
-		Handler: s.mux,
+		Handler: securityHeaders(s.mux),
 	}
 
 	errCh := make(chan error, 1)
@@ -157,6 +162,7 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("GET /static/style.css", s.handleStaticFile("static/style.css", "text/css"))
 	m.HandleFunc("GET /static/app.js", s.handleStaticFile("static/app.js", "application/javascript"))
 	m.HandleFunc("GET /static/hls.min.js", s.handleStaticFile("static/hls.min.js", "application/javascript"))
+	m.HandleFunc("GET /health", s.handleHealth)
 
 	// Auth endpoints — login is public, logout requires auth
 	m.HandleFunc("POST /api/login", s.handleLogin)
@@ -222,6 +228,25 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
+// securityHeaders sets security-related HTTP headers on all responses.
+// Content-Security-Policy is only applied to HTML page routes, not API/media endpoints.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+
+		// CSP only on HTML pages (root and static assets), not on API/media routes.
+		path := r.URL.Path
+		if path == "/" || strings.HasPrefix(path, "/static/") {
+			w.Header().Set("Content-Security-Policy",
+				"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'")
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // handleIndex serves the embedded index.html.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	data, err := staticFS.ReadFile("static/index.html")
@@ -244,6 +269,14 @@ func (s *Server) handleStaticFile(path, contentType string) http.HandlerFunc {
 		w.Header().Set("Content-Type", contentType)
 		w.Write(data)
 	}
+}
+
+// handleHealth returns a minimal health check with server uptime.
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "ok",
+		"uptime": time.Since(s.startTime).String(),
+	})
 }
 
 // handleHLS serves HLS playlist (.m3u8) and segment (.ts) files from

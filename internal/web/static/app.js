@@ -10,11 +10,11 @@
     var RESTART_RELOAD_DELAY = 3000;
     var TOAST_DEFAULT_DURATION = 4000;
 
-    var STORAGE_KEY_TOKEN = 'rpicam:token';
-    var STORAGE_KEY_USER  = 'rpicam:user';
-    var STORAGE_KEY_THEME = 'rpicam:theme';
-    var STORAGE_KEY_LANG  = 'rpicam:lang';
-    var STORAGE_KEY_SIDEBAR = 'rpicam:sidebar';
+    var STORAGE_KEY_TOKEN = 'mibee-eye:token';
+    var STORAGE_KEY_USER  = 'mibee-eye:user';
+    var STORAGE_KEY_THEME = 'mibee-eye:theme';
+    var STORAGE_KEY_LANG  = 'mibee-eye:lang';
+    var STORAGE_KEY_SIDEBAR = 'mibee-eye:sidebar';
 
     /* Must match camera.ParamRanges keys (PascalCase ONVIF names) */
     var IMAGING_SLIDERS = [
@@ -41,6 +41,7 @@
 
             'status.connected': 'Connected',
             'status.disconnected': 'Disconnected',
+            'status.reconnecting': 'Reconnecting…',
 
             'theme.toggle': 'Toggle theme',
             'lang.switch': 'Switch language',
@@ -53,6 +54,7 @@
             'login.submitting': 'Signing in…',
             'login.hint': 'Default credentials are the ONVIF username/password.',
             'login.invalidCredentials': 'Invalid username or password',
+            'login.fieldsRequired': 'Please enter both username and password',
             'login.networkError': 'Connection failed. Check the device address.',
             'login.sessionExpired': 'Your session has expired. Please sign in again.',
 
@@ -65,6 +67,8 @@
             'camera.preview': 'Live Preview',
             'camera.previewSub': 'HLS live stream, ~3s latency.',
             'camera.noSnapshot': 'No snapshot available',
+            'camera.connecting': 'Connecting…',
+            'camera.live': 'LIVE',
             'camera.imaging': 'Imaging Controls',
             'camera.imagingSub': 'Tune sensor parameters in real time.',
             'camera.ptz': 'PTZ Controls',
@@ -95,6 +99,7 @@
             'ptz.presets': 'Presets',
             'ptz.presetsSub': 'Save and recall positions for quick access.',
             'ptz.addPreset': 'Add Preset',
+            'ptz.presetName': 'Preset',
             'ptz.goto': 'Goto',
             'ptz.delete': 'Delete',
             'ptz.noPresets': 'No presets defined',
@@ -110,6 +115,7 @@
             'modal.username': 'Username',
             'modal.password': 'Password',
             'modal.userRequired': 'Username is required',
+            'modal.passwordRequired': 'Password is required',
 
             'restart.message': 'Restarting service… Page will reload automatically.',
 
@@ -132,6 +138,7 @@
 
             'status.connected': '已连接',
             'status.disconnected': '未连接',
+            'status.reconnecting': '重新连接中…',
 
             'theme.toggle': '切换主题',
             'lang.switch': '切换语言',
@@ -144,6 +151,7 @@
             'login.submitting': '登录中…',
             'login.hint': '默认凭据为 ONVIF 用户名和密码。',
             'login.invalidCredentials': '用户名或密码错误',
+            'login.fieldsRequired': '请输入用户名和密码',
             'login.networkError': '连接失败，请检查设备地址。',
             'login.sessionExpired': '会话已过期，请重新登录。',
 
@@ -156,6 +164,8 @@
             'camera.preview': '实时预览',
             'camera.previewSub': 'HLS 直播流，约 3 秒延迟。',
             'camera.noSnapshot': '暂无截图',
+            'camera.connecting': '连接中…',
+            'camera.live': '直播',
             'camera.imaging': '图像控制',
             'camera.imagingSub': '实时调节传感器参数。',
             'camera.ptz': 'PTZ 控制',
@@ -186,6 +196,7 @@
             'ptz.presets': '预置位',
             'ptz.presetsSub': '保存和调用位置以便快速访问。',
             'ptz.addPreset': '添加预置位',
+            'ptz.presetName': '预置位',
             'ptz.goto': '调用',
             'ptz.delete': '删除',
             'ptz.noPresets': '暂无预置位',
@@ -201,6 +212,7 @@
             'modal.username': '用户名',
             'modal.password': '密码',
             'modal.userRequired': '用户名不能为空',
+            'modal.passwordRequired': '密码不能为空',
 
             'restart.message': '服务正在重启… 页面将自动刷新。',
 
@@ -356,6 +368,14 @@
         setTheme(state.theme === 'dark' ? 'light' : 'dark');
     }
 
+    /* Listen for system theme changes */
+    if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function (e) {
+            if (localStorage.getItem(STORAGE_KEY_THEME)) return;
+            setTheme(e.matches ? 'dark' : 'light');
+        });
+    }
+
     /* ======================================================================
        Auth — token, login, logout
        ====================================================================== */
@@ -485,7 +505,7 @@
             var password = passInput.value;
 
             if (!username || !password) {
-                showError(t('login.invalidCredentials'));
+                showError(t('login.fieldsRequired'));
                 return;
             }
 
@@ -589,6 +609,18 @@
                 }
             });
         }
+
+        /* Close mobile sidebar when clicking outside (on the ::after backdrop) */
+        document.addEventListener('click', function (e) {
+            if (window.innerWidth > 900) return;
+            if (!document.body.classList.contains('sidebar-open')) return;
+            var sidebar = $('.sidebar');
+            if (sidebar && sidebar.contains(e.target)) return;
+            var tb = $('#btn-sidebar-toggle');
+            if (tb && tb.contains(e.target)) return;
+            document.body.classList.remove('sidebar-open');
+            if (tb) tb.setAttribute('aria-expanded', 'false');
+        });
     }
 
     function switchTab(tab) {
@@ -607,8 +639,14 @@
             pageTitle.textContent = t(tab === 'camera' ? 'nav.camera' : 'nav.server');
         }
         if (tab === 'camera') {
-            if (typeof loadImaging === 'function' && !state.imagingRendered) loadImaging();
-            if (typeof loadPTZ === 'function' && !state.ptzRendered) loadPTZ();
+            if (!state.imagingRendered) loadImaging();
+            if (!state.ptzRendered) loadPTZ();
+        }
+        /* Stop HLS playback when leaving camera tab to save resources */
+        if (tab !== 'camera' && state.hlsInstance) {
+            try { state.hlsInstance.destroy(); } catch (e) {}
+            state.hlsInstance = null;
+            state.videoPlaying = false;
         }
     }
 
@@ -658,24 +696,37 @@
             error: '<circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/>'
         }[kind] || '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>';
 
-        node.innerHTML =
-            '<svg class="toast-icon" viewBox="0 0 24 24">' + iconSvg + '</svg>' +
-            '<div class="toast-body">' +
-                (title ? '<div class="toast-title"></div>' : '') +
-                (msg ? '<div class="toast-msg"></div>' : '') +
-            '</div>';
+        // Build SVG icon element
+        var svg = el('svg', { className: 'toast-icon', viewBox: '0 0 24 24' });
+        svg.innerHTML = iconSvg; // iconSvg is from hardcoded static lookup — safe
 
-        if (title) node.querySelector('.toast-title').textContent = title;
-        if (msg) node.querySelector('.toast-msg').textContent = msg;
+        // Build toast body
+        var body = el('div', { className: 'toast-body' });
+        if (title) body.appendChild(el('div', { className: 'toast-title' }, title));
+        if (msg) body.appendChild(el('div', { className: 'toast-msg' }, msg));
 
-        stack.appendChild(node);
+        // Build close button
+        var closeBtn = el('button', { className: 'toast-close', type: 'button', 'aria-label': 'Close' }, '\u00d7');
 
-        setTimeout(function () {
+        node.appendChild(svg);
+        node.appendChild(body);
+        node.appendChild(closeBtn);
+        closeBtn.addEventListener('click', function () {
+            clearTimeout(dismissTimer);
+            node.classList.add('is-leaving');
+            setTimeout(function () {
+                if (node.parentNode) node.parentNode.removeChild(node);
+            }, 250);
+        });
+
+        var dismissTimer = setTimeout(function () {
             node.classList.add('is-leaving');
             setTimeout(function () {
                 if (node.parentNode) node.parentNode.removeChild(node);
             }, 250);
         }, duration);
+
+        stack.appendChild(node);
     }
 
     /* ======================================================================
@@ -738,8 +789,10 @@
         var errBox = $('#modal-error');
         var inputUser = $('#input-onvif-user');
         var inputPass = $('#input-onvif-pass');
+        var previousFocus = null;
 
         function openModal() {
+            previousFocus = document.activeElement;
             errBox.setAttribute('hidden', '');
             errBox.textContent = '';
             inputUser.value = '';
@@ -750,7 +803,30 @@
 
         function closeModal() {
             overlay.setAttribute('hidden', '');
+            if (previousFocus && previousFocus.focus) previousFocus.focus();
         }
+
+        /* Focus trap: cycle Tab within modal */
+        overlay.addEventListener('keydown', function (e) {
+            if (e.key !== 'Tab') return;
+            var focusable = overlay.querySelectorAll(
+                'input:not([disabled]):not([type="hidden"]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            );
+            if (focusable.length === 0) return;
+            var first = focusable[0];
+            var last = focusable[focusable.length - 1];
+            if (e.shiftKey) {
+                if (document.activeElement === first) {
+                    e.preventDefault();
+                    last.focus();
+                }
+            } else {
+                if (document.activeElement === last) {
+                    e.preventDefault();
+                    first.focus();
+                }
+            }
+        });
 
         if (btnEdit) btnEdit.addEventListener('click', openModal);
         if (btnCancel) btnCancel.addEventListener('click', closeModal);
@@ -772,6 +848,13 @@
                 errBox.textContent = t('modal.userRequired');
                 errBox.removeAttribute('hidden');
                 inputUser.focus();
+                return;
+            }
+
+            if (!password) {
+                errBox.textContent = t('modal.passwordRequired');
+                errBox.removeAttribute('hidden');
+                inputPass.focus();
                 return;
             }
 
@@ -813,16 +896,16 @@
         var meta = $('#snapshot-meta');
 
         img.addEventListener('load', function () {
-            img.style.display = 'block';
-            placeholder.style.display = 'none';
+            img.hidden = false;
+            if (placeholder) placeholder.style.display = 'none';
             state.snapshotLoadTime = Date.now();
             state.snapshotFailures = 0;
             updateSnapshotMeta();
         });
 
         img.addEventListener('error', function () {
-            img.style.display = 'none';
-            placeholder.style.display = 'flex';
+            img.hidden = true;
+            if (placeholder) placeholder.style.display = 'flex';
             state.snapshotFailures++;
             updateSnapshotMeta();
         });
@@ -914,6 +997,7 @@
     }
 
     function refreshSnapshot() {
+        if (state.videoPlaying) return;
         var img = $('#snapshot');
         if (!img) return;
         img.src = '/api/snapshot?ts=' + Date.now() + (state.token ? '&token=' + encodeURIComponent(state.token) : '');
@@ -924,7 +1008,7 @@
         if (!meta) return;
         if (state.snapshotLoadTime === 0) {
             if (state.snapshotFailures > 0) {
-                meta.textContent = state.lang === 'zh' ? '连接中…' : 'Connecting…';
+                meta.textContent = t('camera.connecting');
                 meta.classList.remove('live');
             } else {
                 meta.textContent = '—';
@@ -934,8 +1018,7 @@
         }
         var elapsed = Math.floor((Date.now() - state.snapshotLoadTime) / 1000);
         meta.classList.add('live');
-        var label = state.lang === 'zh' ? '直播' : 'LIVE';
-        meta.textContent = label + '  ·  ' + elapsed + 's';
+        meta.textContent = t('camera.live') + '  ·  ' + elapsed + 's';
     }
 
     /* ======================================================================
@@ -1072,11 +1155,15 @@
     }
 
     function postParam(name, value) {
-        api('POST', '/api/camera/param', { name: name, value: value }).catch(function (err) {
-            if (err.status !== 401) {
-                showToast('toast.paramError', { name: name, err: err.message }, { kind: 'error' });
-            }
-        });
+        clearTimeout(state._postParamTimers && state._postParamTimers[name]);
+        if (!state._postParamTimers) state._postParamTimers = {};
+        state._postParamTimers[name] = setTimeout(function () {
+            api('POST', '/api/camera/param', { name: name, value: value }).catch(function (err) {
+                if (err.status !== 401) {
+                    showToast('toast.paramError', { name: name, err: err.message }, { kind: 'error' });
+                }
+            });
+        }, 150);
     }
 
     function flashValue(wrap) {
@@ -1192,6 +1279,45 @@
             zoomOut.addEventListener('touchend', stopMove);
             zoomOut.addEventListener('touchcancel', stopMove);
         }
+
+        /* Keyboard shortcuts: Arrow keys for PTZ when camera tab is active */
+        document.addEventListener('keydown', function (e) {
+            if (state.currentTab !== 'camera') return;
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+            var keyMap = {
+                ArrowUp: dirs.up, ArrowDown: dirs.down,
+                ArrowLeft: dirs.left, ArrowRight: dirs.right
+            };
+            if (keyMap[e.key]) {
+                e.preventDefault();
+                if (!state._keyMoving) {
+                    state._keyMoving = true;
+                    startMove(keyMap[e.key]);
+                }
+            }
+            if (e.key === '+' || e.key === '=') {
+                e.preventDefault();
+                if (!state._keyMoving) {
+                    state._keyMoving = true;
+                    startMove({ Pan: 0, Tilt: 0, Zoom: 0.3 });
+                }
+            }
+            if (e.key === '-') {
+                e.preventDefault();
+                if (!state._keyMoving) {
+                    state._keyMoving = true;
+                    startMove({ Pan: 0, Tilt: 0, Zoom: -0.3 });
+                }
+            }
+        });
+        document.addEventListener('keyup', function (e) {
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '+', '=', '-'].indexOf(e.key) !== -1) {
+                if (state._keyMoving) {
+                    state._keyMoving = false;
+                    stopMove();
+                }
+            }
+        });
     }
 
     function startMove(velocity) {
@@ -1234,7 +1360,7 @@
             var row = el('div', { className: 'preset-row' });
 
             var info = el('div', { className: 'preset-info' });
-            info.appendChild(el('span', { className: 'preset-name', textContent: p.name || ('Preset ' + p.token) }));
+            info.appendChild(el('span', { className: 'preset-name', textContent: p.name || (t('ptz.presetName') + ' ' + p.token) }));
 
             var posText = 'Token: ' + p.token;
             if (p.position) {
@@ -1265,8 +1391,7 @@
 
     function addPreset() {
         var count = $$('#preset-list .preset-row').length;
-        var namePrefix = state.lang === 'zh' ? '预置位' : 'Preset';
-        api('POST', '/api/ptz/preset', { name: namePrefix + ' ' + (count + 1) })
+        api('POST', '/api/ptz/preset', { name: t('ptz.presetName') + ' ' + (count + 1) })
             .then(loadPresets)
             .catch(function (err) {
                 if (err.status !== 401) {
@@ -1284,6 +1409,8 @@
     }
 
     function deletePreset(token) {
+        var confirmMsg = state.lang === 'zh' ? '确定要删除此预置位吗？' : 'Are you sure you want to delete this preset?';
+        if (!window.confirm(confirmMsg)) return;
         api('DELETE', '/api/ptz/preset/' + encodeURIComponent(token))
             .then(loadPresets)
             .catch(function (err) {
@@ -1333,16 +1460,20 @@
 
     function scheduleReconnect() {
         clearTimeout(state.wsReconnectTimer);
+        setWSStatus(false, true);
         state.wsReconnectTimer = setTimeout(connectWS, WS_RECONNECT_DELAY);
     }
 
-    function setWSStatus(connected) {
+    function setWSStatus(connected, reconnecting) {
         var badge = $('#ws-status');
         if (!badge) return;
         var text = badge.querySelector('.status-text');
         if (connected) {
             badge.className = 'status-pill connected';
             if (text) text.textContent = t('status.connected');
+        } else if (reconnecting) {
+            badge.className = 'status-pill reconnecting';
+            if (text) text.textContent = t('status.reconnecting');
         } else {
             badge.className = 'status-pill disconnected';
             if (text) text.textContent = t('status.disconnected');
@@ -1463,13 +1594,6 @@
 
         /* Wire up login screen (always present, shows initially) */
         initLogin();
-
-        /* Top bar controls are visible only after login but click handlers
-           can be attached now since elements exist in DOM */
-        var themeBtn = $('#btn-theme');
-        if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
-        var langBtn = $('#btn-lang');
-        if (langBtn) langBtn.addEventListener('click', cycleLang);
 
         /* Apply i18n to login screen */
         applyI18n();

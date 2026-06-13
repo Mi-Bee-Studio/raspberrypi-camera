@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -110,27 +111,63 @@ func (s *Server) handlePostConfigOnvif(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write updated config to file.
-	type onvifSection struct {
-		Port     int    `yaml:"port"`
-		Username string `yaml:"username"`
-		Password string `yaml:"password"`
+	// Read existing config file to preserve all sections.
+	data, err := os.ReadFile(s.cfg.ConfigPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to read config: %v", err))
+		return
 	}
-	update := map[string]interface{}{
-		"onvif": onvifSection{
-			Port:     s.cfg.OnvifConfig.ONVIFPort(),
-			Username: req.Username,
-			Password: req.Password,
-		},
+
+	// Unmarshal into generic map to preserve all sections.
+	var cfg map[string]interface{}
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to parse config: %v", err))
+		return
 	}
-	data, err := yaml.Marshal(update)
+
+	// Update only the onvif section.
+	cfg["onvif"] = map[string]interface{}{
+		"port":     s.cfg.OnvifConfig.ONVIFPort(),
+		"username": req.Username,
+		"password": req.Password,
+	}
+
+	// Marshal the complete config back to YAML.
+	out, err := yaml.Marshal(cfg)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal config: %v", err))
 		return
 	}
 
-	if err := os.WriteFile(s.cfg.ConfigPath, data, 0600); err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write config: %v", err))
+	// Atomic write: temp file in same directory, then rename.
+	dir := filepath.Dir(s.cfg.ConfigPath)
+	tmpFile, err := os.CreateTemp(dir, filepath.Base(s.cfg.ConfigPath)+".*.tmp")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create temp file: %v", err))
+		return
+	}
+	tmpPath := tmpFile.Name()
+
+	if _, err := tmpFile.Write(out); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write temp file: %v", err))
+		return
+	}
+	if err := tmpFile.Sync(); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to sync temp file: %v", err))
+		return
+	}
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpPath)
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to close temp file: %v", err))
+		return
+	}
+	if err := os.Rename(tmpPath, s.cfg.ConfigPath); err != nil {
+		os.Remove(tmpPath)
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to rename config: %v", err))
 		return
 	}
 
@@ -322,46 +359,13 @@ func (s *Server) handleGetPTZPresets(w http.ResponseWriter, r *http.Request) {
 	result := make([]map[string]interface{}, 0, len(presets))
 	for _, p := range presets {
 		result = append(result, map[string]interface{}{
-			"token":    "", // filled by caller using token iteration
+			"token":    "",
 			"name":     p.Name,
 			"position": p.Position,
 		})
 	}
 
-	// Build result with tokens from GetPresets().
-	tokens := s.cfg.PTZ.GetPresets()
-	tokenSet := make(map[string]struct{}, len(tokens))
-	for _, t := range tokens {
-		tokenSet[t] = struct{}{}
-	}
-
-	// Rebuild properly with tokens.
-	presetMap := s.cfg.PTZ.ListPresets() // returns in random map order
-	// We need the map from State. Use GetPresetPosition for each token.
-	result2 := make([]map[string]interface{}, 0, len(tokens))
-	for _, token := range tokens {
-		pos, err := s.cfg.PTZ.GetPresetPosition(token)
-		if err != nil {
-			continue
-		}
-		result2 = append(result2, map[string]interface{}{
-			"token":    token,
-			"name":     presetNameForToken(presetMap, token),
-			"position": pos,
-		})
-	}
-
-	writeJSON(w, http.StatusOK, result2)
-}
-
-// presetNameForToken finds the preset name for a given token from the preset list.
-func presetNameForToken(presets []ptz.Preset, token string) string {
-	for _, p := range presets {
-		// ListPresets doesn't include token directly; we need to match by position.
-		// Since we can't match by position reliably, return the token as name.
-		_ = p
-	}
-	return token
+	writeJSON(w, http.StatusOK, result)
 }
 
 // handlePostPTZPreset creates a new preset.

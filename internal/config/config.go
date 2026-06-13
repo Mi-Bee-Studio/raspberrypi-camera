@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -142,6 +143,10 @@ func Load(path string) (*Config, error) {
 
 	applyEnvOverrides(cfg)
 
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
 }
 
@@ -190,6 +195,61 @@ func applyEnvOverrides(cfg *Config) {
 
 	// Logging section
 	overrideString("MIBEE_EYE_LOGGING_LEVEL", &cfg.Logging.Level)
+}
+
+// Sentinel errors for config validation.
+var (
+	errMustBePositive  = errors.New("must be positive")
+	errInvalidCodec    = errors.New("codec must be h264 or h265")
+	errInvalidLogLevel = errors.New("level must be debug, info, warn, or error")
+)
+
+// Validate checks all config fields and returns a detailed error if any are invalid.
+// It uses fmt.Errorf with %%w wrapping for the inner validation error.
+func (c *Config) Validate() error {
+	if c.Camera.FPS <= 0 {
+		return fmt.Errorf("config.camera.fps: %w", errMustBePositive)
+	}
+	if c.Camera.Width <= 0 {
+		return fmt.Errorf("config.camera.width: %w", errMustBePositive)
+	}
+	if c.Camera.Height <= 0 {
+		return fmt.Errorf("config.camera.height: %w", errMustBePositive)
+	}
+	if c.Camera.Bitrate <= 0 {
+		return fmt.Errorf("config.camera.bitrate: %w", errMustBePositive)
+	}
+	if c.Camera.Brightness < -1.0 || c.Camera.Brightness > 1.0 {
+		return fmt.Errorf("config.camera.brightness: %w", fmt.Errorf("out of range [-1.0, 1.0]"))
+	}
+	if c.Camera.Contrast < 0.0 || c.Camera.Contrast > 32.0 {
+		return fmt.Errorf("config.camera.contrast: %w", fmt.Errorf("out of range [0.0, 32.0]"))
+	}
+	if c.Camera.Saturation < 0.0 || c.Camera.Saturation > 32.0 {
+		return fmt.Errorf("config.camera.saturation: %w", fmt.Errorf("out of range [0.0, 32.0]"))
+	}
+	if c.Camera.Sharpness < 0.0 || c.Camera.Sharpness > 16.0 {
+		return fmt.Errorf("config.camera.sharpness: %w", fmt.Errorf("out of range [0.0, 16.0]"))
+	}
+	if c.Camera.Codec != "h264" && c.Camera.Codec != "h265" {
+		return fmt.Errorf("config.camera.codec: %w", errInvalidCodec)
+	}
+	if c.RTSP.Port <= 0 {
+		return fmt.Errorf("config.rtsp.port: %w", errMustBePositive)
+	}
+	if c.ONVIF.Port <= 0 {
+		return fmt.Errorf("config.onvif.port: %w", errMustBePositive)
+	}
+	if c.Web.Enabled && c.Web.Port <= 0 {
+		return fmt.Errorf("config.web.port: %w", errMustBePositive)
+	}
+	switch c.Logging.Level {
+	case "debug", "info", "warn", "error":
+		// valid
+	default:
+		return fmt.Errorf("config.logging.level: %w", errInvalidLogLevel)
+	}
+	return nil
 }
 
 func overrideString(envName string, dest *string) {

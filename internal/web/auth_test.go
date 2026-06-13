@@ -15,6 +15,7 @@ func newTestServer(user, pass string) *Server {
 	return &Server{
 		sessions: NewSessionStore(user, pass),
 		logger:   log.New(io.Discard, "", 0),
+		loginLimiter: &loginRateLimiter{attempts: make(map[string]*rateLimitEntry)},
 	}
 }
 
@@ -290,5 +291,152 @@ func TestHandleLogin_ResponseShape(t *testing.T) {
 		if _, ok := resp[k]; !ok {
 			t.Errorf("response missing %q field: %v", k, resp)
 		}
+	}
+}
+
+func TestRateLimiter_UnderLimit(t *testing.T) {
+	s := newTestServer("admin", "admin123")
+	ip := "192.168.1.1"
+
+	// 9 failed logins — all should return 401 (not blocked).
+	for i := 0; i < 9; i++ {
+		req := httptest.NewRequest("POST", "/api/login",
+			strings.NewReader(`{"username":"admin","password":"wrong"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = ip + ":12345"
+		rr := httptest.NewRecorder()
+		s.handleLogin(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: expected 401, got %d (body: %s)", i+1, rr.Code, rr.Body.String())
+		}
+	}
+
+	// Verify counter is at 9, not blocked.
+	s.loginLimiter.mu.Lock()
+	entry := s.loginLimiter.attempts[ip]
+	s.loginLimiter.mu.Unlock()
+	if entry == nil {
+		t.Fatal("expected rate limit entry after 9 failures")
+	}
+	if entry.count >= maxLoginAttempts {
+		t.Errorf("expected count < %d after 9 failures, got %d", maxLoginAttempts, entry.count)
+	}
+	if !entry.blockedUntil.IsZero() {
+		t.Error("expected not blocked after 9 failures")
+	}
+}
+
+func TestRateLimiter_Blocked(t *testing.T) {
+	s := newTestServer("admin", "admin123")
+	ip := "192.168.1.1"
+
+	// 10 failed logins.
+	for i := 0; i < 10; i++ {
+		req := httptest.NewRequest("POST", "/api/login",
+			strings.NewReader(`{"username":"admin","password":"wrong"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = ip + ":12345"
+		rr := httptest.NewRecorder()
+		s.handleLogin(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: expected 401, got %d", i+1, rr.Code)
+		}
+	}
+
+	// 11th attempt — should be blocked with 429.
+	req := httptest.NewRequest("POST", "/api/login",
+		strings.NewReader(`{"username":"admin","password":"wrong"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = ip + ":12345"
+	rr := httptest.NewRecorder()
+	s.handleLogin(rr, req)
+	if rr.Code != http.StatusTooManyRequests {
+		t.Errorf("expected 429, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestRateLimiter_ResetOnSuccess(t *testing.T) {
+	s := newTestServer("admin", "admin123")
+	ip := "192.168.1.1"
+
+	// 8 failures.
+	for i := 0; i < 8; i++ {
+		req := httptest.NewRequest("POST", "/api/login",
+			strings.NewReader(`{"username":"admin","password":"wrong"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = ip + ":12345"
+		rr := httptest.NewRecorder()
+		s.handleLogin(rr, req)
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: expected 401, got %d", i+1, rr.Code)
+		}
+	}
+
+	// Successful login — resets counter.
+	req := httptest.NewRequest("POST", "/api/login",
+		strings.NewReader(`{"username":"admin","password":"admin123"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = ip + ":12345"
+	rr := httptest.NewRecorder()
+	s.handleLogin(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 after correct login, got %d", rr.Code)
+	}
+
+	// After reset, 9th failure (1st after reset) should return 401, not 429.
+	req = httptest.NewRequest("POST", "/api/login",
+		strings.NewReader(`{"username":"admin","password":"wrong"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = ip + ":12345"
+	rr = httptest.NewRecorder()
+	s.handleLogin(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 after reset, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestSecurityHeaders(t *testing.T) {
+	handler := securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	tests := []struct {
+		name    string
+		path    string
+		wantCSP bool
+	}{
+		{"root", "/", true},
+		{"static css", "/static/style.css", true},
+		{"static js", "/static/app.js", true},
+		{"api login", "/api/login", false},
+		{"api config", "/api/config", false},
+		{"hls", "/api/hls/stream.m3u8", false},
+		{"ws", "/ws", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.path, nil)
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			if rr.Header().Get("X-Frame-Options") != "DENY" {
+				t.Error("missing X-Frame-Options: DENY")
+			}
+			if rr.Header().Get("X-Content-Type-Options") != "nosniff" {
+				t.Error("missing X-Content-Type-Options: nosniff")
+			}
+			if rr.Header().Get("Referrer-Policy") != "strict-origin-when-cross-origin" {
+				t.Error("missing Referrer-Policy: strict-origin-when-cross-origin")
+			}
+
+			csp := rr.Header().Get("Content-Security-Policy")
+			if tt.wantCSP && csp == "" {
+				t.Errorf("expected CSP header for path %q", tt.path)
+			}
+			if !tt.wantCSP && csp != "" {
+				t.Errorf("unexpected CSP header for path %q: %s", tt.path, csp)
+			}
+		})
 	}
 }

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -391,5 +392,61 @@ func TestMissingFile(t *testing.T) {
 	_, err := Load("/nonexistent/path/config.yaml")
 	if err == nil {
 		t.Fatal("expected error for missing file, got nil")
+	}
+}
+
+func TestValidateNegativeFPS(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Camera.FPS = -1
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative FPS, got nil")
+	}
+	if !strings.Contains(err.Error(), "fps") {
+		t.Errorf("error should mention 'fps', got: %v", err)
+	}
+}
+
+func TestValidateZeroPort(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ONVIF.Port = 0
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for zero ONVIF port, got nil")
+	}
+	if !strings.Contains(err.Error(), "onvif.port") {
+		t.Errorf("error should mention 'onvif.port', got: %v", err)
+	}
+}
+
+func TestValidateInvalidBrightness(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Camera.Brightness = 5.0
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for invalid brightness, got nil")
+	}
+	if !strings.Contains(err.Error(), "brightness") {
+		t.Errorf("error should mention 'brightness', got: %v", err)
+	}
+}
+
+func TestValidateValidConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	err := cfg.Validate()
+	if err != nil {
+		t.Errorf("DefaultConfig() should be valid, got: %v", err)
+	}
+}
+
+func TestValidateInvalidCodec(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Camera.Codec = "vp9"
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for invalid codec, got nil")
+	}
+	if !strings.Contains(err.Error(), "codec") {
+		t.Errorf("error should mention 'codec', got: %v", err)
 	}
 }

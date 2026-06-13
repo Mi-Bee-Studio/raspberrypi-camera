@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"net"
 	"errors"
 	"net/http"
 	"strings"
@@ -16,6 +17,25 @@ const (
 	sessionTTL  = 24 * time.Hour
 	cleanupTick = 1 * time.Hour
 )
+
+// loginRateLimiter tracks failed login attempts per IP.
+type loginRateLimiter struct {
+	mu       sync.Mutex
+	attempts map[string]*rateLimitEntry
+}
+
+type rateLimitEntry struct {
+	count        int
+	windowStart  time.Time
+	blockedUntil time.Time
+}
+
+const (
+	maxLoginAttempts   = 10
+	loginWindow        = 1 * time.Minute
+	loginBlockDuration = 5 * time.Minute
+)
+
 
 // session represents an authenticated user session.
 type session struct {
@@ -126,6 +146,81 @@ func (s *SessionStore) cleanup() {
 	}
 }
 
+// allow checks if the given IP is allowed to attempt login.
+// Returns false if the IP is currently blocked.
+func (l *loginRateLimiter) allow(ip string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	entry, ok := l.attempts[ip]
+	if !ok {
+		return true
+	}
+	now := time.Now()
+	// If blocked and block not expired yet, deny.
+	if now.Before(entry.blockedUntil) {
+		return false
+	}
+	// If block expired, clean up and allow.
+	if !entry.blockedUntil.IsZero() {
+		delete(l.attempts, ip)
+		return true
+	}
+	// If window expired, clean up and allow.
+	if now.Sub(entry.windowStart) > loginWindow {
+		delete(l.attempts, ip)
+		return true
+	}
+	return entry.count < maxLoginAttempts
+}
+
+// recordFailure increments the failed attempt counter for the given IP.
+// If the counter reaches maxLoginAttempts, the IP is blocked for loginBlockDuration.
+func (l *loginRateLimiter) recordFailure(ip string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := time.Now()
+	entry, ok := l.attempts[ip]
+	if !ok {
+		l.attempts[ip] = &rateLimitEntry{
+			count:       1,
+			windowStart: now,
+		}
+		return
+	}
+	// If already blocked, don't increment further.
+	if now.Before(entry.blockedUntil) {
+		return
+	}
+	// If window expired, reset count.
+	if now.Sub(entry.windowStart) > loginWindow {
+		entry.count = 1
+		entry.windowStart = now
+		entry.blockedUntil = time.Time{}
+		return
+	}
+	entry.count++
+	if entry.count >= maxLoginAttempts {
+		entry.blockedUntil = now.Add(loginBlockDuration)
+	}
+}
+
+// recordSuccess resets the rate limiter for the given IP after a successful login.
+func (l *loginRateLimiter) recordSuccess(ip string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.attempts, ip)
+}
+
+// extractIP returns the client IP address from the request, stripping the port.
+func extractIP(r *http.Request) string {
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return ip
+}
+
+
 // extractToken returns the bearer token from the request.
 // It checks (in order): Authorization: Bearer header, ?token= query string.
 func extractToken(r *http.Request) string {
@@ -175,12 +270,23 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "username and password are required")
 		return
 	}
+
+	// Check rate limiter before attempting authentication.
+	ip := extractIP(r)
+	if !s.loginLimiter.allow(ip) {
+		writeError(w, http.StatusTooManyRequests, "too many login attempts, try again later")
+		return
+	}
+
 	token, expires, err := s.sessions.Login(req.Username, req.Password)
 	if err != nil {
+		s.loginLimiter.recordFailure(ip)
 		s.logger.Printf("web: login failed for user %q", req.Username)
 		writeError(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
+
+	s.loginLimiter.recordSuccess(ip)
 	s.logger.Printf("web: login OK for user %q (active sessions: %d)", req.Username, s.sessions.Count())
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"token":      token,
