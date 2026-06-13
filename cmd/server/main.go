@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/camera"
 	"github.com/Mi-Bee-Studio/mibee-eye-raspi/internal/config"
@@ -141,7 +142,6 @@ adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
 	if err := cam.Start(ctx); err != nil {
 		log.Fatalf("camera start: %v", err)
 	}
-	defer cam.Stop()
 
 	// --- Step 2: H264 Parser + AUHub ---
 	parser := h264.NewParser()
@@ -192,7 +192,6 @@ adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
 	if err := rtspServer.Start(ctx); err != nil {
 		log.Fatalf("rtsp server start: %v", err)
 	}
-	defer rtspServer.Stop()
 
 	// --- Step 3.5: HLS Bridge (ffmpeg RTSP -> HLS for browser playback) ---
 	hlsServer := hls.New(hls.Config{
@@ -207,7 +206,6 @@ adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
 	if err := hlsServer.Start(ctx); err != nil {
 		log.Printf("warning: HLS bridge not started (web preview disabled): %v", err)
 	}
-	defer hlsServer.Stop()
 
 	// --- Step 4: ParamManager + PTZ ---
 	paramManager := camera.NewParamManager(cam)
@@ -235,9 +233,10 @@ adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
 	// Snapshot handlers (buffer already fed from AUHub goroutine started in Step 2)
 	onvif.RegisterSnapshotHandlers(onvifServer, snapshotBuf, nil)
 
+	var webServer *web.Server
 	// --- Step 5.5: Web UI Server ---
 	if cfg.Web.Enabled {
-		webServer := web.New(web.Config{
+		webServer = web.New(web.Config{
 			Port:        cfg.Web.Port,
 			Username:    cfg.Web.Username,
 			Password:    cfg.Web.Password,
@@ -253,7 +252,6 @@ adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
 				log.Printf("web server exited: %v", err)
 			}
 		}()
-		defer webServer.Stop()
 	}
 
 	// --- Step 6: WS-Discovery ---
@@ -261,7 +259,6 @@ adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
 	if err := discovery.StartUDP(ctx); err != nil {
 		log.Printf("warning: failed to start WS-Discovery: %v", err)
 	}
-	defer discovery.StopUDP()
 	onvifServer.SetDiscoveryHandler(http.HandlerFunc(discovery.HandleHTTPProbe))
 
 	// Start ONVIF HTTP server in goroutine
@@ -271,17 +268,63 @@ adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
 		}
 	}()
 
+	var rtmpPush *rtmp.Push
 	// --- Step 7: RTMP Push (optional) ---
 	if cfg.RTMP.Enabled {
-		rtmpPush := rtmp.New(rtmp.Config{
+		rtmpPush = rtmp.New(rtmp.Config{
 			Enabled: true,
 			URL:     cfg.RTMP.URL,
 			RTSPURL: fmt.Sprintf("rtsp://localhost:%d/stream", cfg.RTSP.Port),
 		})
 		rtmpPush.Start(ctx)
-		defer rtmpPush.Stop()
 	}
 
 	<-ctx.Done()
 	log.Printf("MiBee Eye %s shutting down...", version)
+
+	// Ordered shutdown in reverse startup order with 5s timeouts per step
+	shutdownStep("rtmp", 5*time.Second, func() error {
+		if rtmpPush != nil {
+			return rtmpPush.Stop()
+		}
+		return nil
+	})
+	shutdownStep("discovery", 5*time.Second, func() error { return discovery.StopUDP() })
+	shutdownStep("onvif", 5*time.Second, func() error { return onvifServer.Stop() })
+	shutdownStep("web", 5*time.Second, func() error {
+		if webServer != nil {
+			return webServer.Stop()
+		}
+		return nil
+	})
+	shutdownStep("hls", 5*time.Second, func() error { return hlsServer.Stop() })
+	shutdownStep("rtsp", 5*time.Second, func() error { return rtspServer.Stop() })
+	shutdownStep("camera", 5*time.Second, func() error { return cam.Stop() })
+
+	log.Printf("MiBee Eye %s stopped", version)
+}
+
+// shutdownStep runs a shutdown function with a timeout.
+// If the function does not complete within the timeout, a warning is logged
+// and execution continues to the next step.
+func shutdownStep(name string, timeout time.Duration, fn func() error) {
+	log.Printf("shutdown: stopping %s...", name)
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- fn()
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			log.Printf("shutdown: %s stopped with error: %v", name, err)
+		} else {
+			log.Printf("shutdown: %s stopped", name)
+		}
+	case <-timer.C:
+		log.Printf("shutdown: %s stop timed out after %v", name, timeout)
+	}
 }
