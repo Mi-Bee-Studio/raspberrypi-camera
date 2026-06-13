@@ -242,7 +242,16 @@ func securityHeaders(next http.Handler) http.Handler {
 		path := r.URL.Path
 		if path == "/" || strings.HasPrefix(path, "/static/") {
 			w.Header().Set("Content-Security-Policy",
-				"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'")
+				"default-src 'none'; "+
+				"script-src 'self'; "+
+				"style-src 'self' 'unsafe-inline'; "+
+				"img-src 'self' data: blob:; "+
+				"font-src 'self'; "+
+				"connect-src 'self' ws: wss:; "+
+				"media-src 'self' blob:; "+
+				"base-uri 'self'; "+
+				"form-action 'none'; "+
+				"frame-ancestors 'none'")
 		}
 
 		next.ServeHTTP(w, r)
