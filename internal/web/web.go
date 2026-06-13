@@ -39,6 +39,7 @@ type Config struct {
 	PTZ         *ptz.State
 	Snapshot    *onvif.SnapshotBuffer
 	HLS         *hls.Server // optional HLS bridge; nil disables /api/hls/*
+	Version     string              // build version from ldflags
 	Logger      *log.Logger // nil -> log.Default()
 }
 
@@ -163,6 +164,7 @@ func (s *Server) registerRoutes() {
 	m.HandleFunc("GET /static/app.js", s.handleStaticFile("static/app.js", "application/javascript"))
 	m.HandleFunc("GET /static/hls.min.js", s.handleStaticFile("static/hls.min.js", "application/javascript"))
 	m.HandleFunc("GET /health", s.handleHealth)
+	m.HandleFunc("GET /api/version", s.handleVersion)
 
 	// Auth endpoints — login is public, logout requires auth
 	m.HandleFunc("POST /api/login", s.handleLogin)
@@ -276,6 +278,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "ok",
 		"uptime": time.Since(s.startTime).String(),
+	})
+}
+
+// handleVersion returns the build version.
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{
+		"version": s.cfg.Version,
 	})
 }
 

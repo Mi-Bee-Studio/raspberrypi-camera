@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -93,10 +94,15 @@ func (c *noOpCamera) GetParam(name string) (interface{}, error) {
 func (c *noOpCamera) Info() camera.CameraInfo {
 	return camera.CameraInfo{}
 }
-
 func main() {
 	configPath := flag.String("config", "configs/config.yaml", "path to config file")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Fprintf(os.Stderr, "mibee-eye version %s\n", version)
+		os.Exit(0)
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
@@ -246,6 +252,7 @@ adapter := &configAdapter{cfg: cfg, deviceIP: localIP}
 			PTZ:         ptzState,
 			Snapshot:    snapshotBuf,
 			HLS:         hlsServer,
+			Version:     version,
 		})
 		go func() {
 			if err := webServer.Start(ctx); err != nil {

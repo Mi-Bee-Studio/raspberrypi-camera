@@ -10,6 +10,12 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body data-auth="logged-out">
+
+    <!-- ========== Loading Overlay ========== -->
+    <div id="loading-overlay" class="loading-overlay" aria-hidden="true">
+        <div class="loading-spinner"></div>
+    </div>
+
     <a class="skip-link" href="#main" data-i18n="a11y.skipToContent">Skip to content</a>
 
     <!-- ========== Login Screen ========== -->
@@ -100,8 +106,8 @@
 
             <div class="sidebar-foot">
                 <div class="sidebar-version">
-                    <span class="dot" aria-hidden="true"></span>
-                    <span>v1.0.0</span>
+					<span class="dot" aria-hidden="true"></span>
+					<span id="version-display">--</span>
                 </div>
             </div>
         </aside>
@@ -326,6 +332,27 @@
 
                 </section>
             </main>
+        </div>
+    </div>
+
+    <!-- ========== Confirm Modal ========== -->
+    <div id="confirm-overlay" class="modal-overlay" hidden>
+        <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+            <header class="modal-head">
+                <h3 id="confirm-title" class="modal-title">Confirm</h3>
+                <button class="icon-btn modal-close" id="btn-confirm-close" type="button" aria-label="Close">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6L6 18"/>
+                    </svg>
+                </button>
+            </header>
+            <div class="modal-body">
+                <p id="confirm-message" class="confirm-message"></p>
+            </div>
+            <footer class="modal-foot">
+                <button class="btn" id="btn-confirm-no" type="button" data-i18n="actions.cancel">Cancel</button>
+                <button class="btn btn-danger" id="btn-confirm-yes" type="button">Confirm</button>
+            </footer>
         </div>
     </div>
 

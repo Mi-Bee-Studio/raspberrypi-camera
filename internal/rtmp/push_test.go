@@ -55,9 +55,8 @@ func TestBuildCommand(t *testing.T) {
 	p := New(cfg)
 
 	cmd := p.buildCommand()
-
-	if cmd.Path != "ffmpeg" {
-		t.Errorf("expected Path=ffmpeg, got %s", cmd.Path)
+	if filepath.Base(cmd.Path) != "ffmpeg" {
+		t.Errorf("expected basename=ffmpeg, got %s", cmd.Path)
 	}
 
 	args := cmd.Args

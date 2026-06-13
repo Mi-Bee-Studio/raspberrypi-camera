@@ -875,25 +875,68 @@
                 return;
             }
 
-            btnSave.classList.add('is-loading');
-            btnSave.disabled = true;
+            var confirmMsg = state.lang === 'zh' ? '此操作将重启服务器，确定继续吗？' : 'This will restart the server. Continue?';
+            showConfirmModal(confirmMsg).then(function () {
+                btnSave.classList.add('is-loading');
+                btnSave.disabled = true;
 
-            api('POST', '/api/config/onvif', { username: username, password: password })
-                .then(function () {
-                    closeModal();
-                    showToast('toast.saved', null, { kind: 'success' });
-                    showRestartBanner();
-                })
-                .catch(function (err) {
-                    if (err.status !== 401) {
-                        errBox.textContent = err.message;
-                        errBox.removeAttribute('hidden');
-                    }
-                })
-                .finally(function () {
-                    btnSave.classList.remove('is-loading');
-                    btnSave.disabled = false;
-                });
+                api('POST', '/api/config/onvif', { username: username, password: password })
+                    .then(function () {
+                        closeModal();
+                        showToast('toast.saved', null, { kind: 'success' });
+                        showRestartBanner();
+                    })
+                    .catch(function (err) {
+                        if (err.status !== 401) {
+                            errBox.textContent = err.message;
+                            errBox.removeAttribute('hidden');
+                        }
+                    })
+                    .finally(function () {
+                        btnSave.classList.remove('is-loading');
+                        btnSave.disabled = false;
+                    });
+            }).catch(function () { /* cancelled — do nothing */ });
+        });
+    }
+
+    function hideLoading() {
+        var el = $('#loading-overlay');
+        if (el) el.setAttribute('hidden', '');
+    }
+
+    function showConfirmModal(message) {
+        var overlay = $('#confirm-overlay');
+        var msgEl = $('#confirm-message');
+        var btnYes = $('#btn-confirm-yes');
+        var btnNo = $('#btn-confirm-no');
+        var btnClose = $('#btn-confirm-close');
+        var previousFocus = document.activeElement;
+
+        return new Promise(function (resolve, reject) {
+            function cleanup() {
+                overlay.setAttribute('hidden', '');
+                btnYes.removeEventListener('click', onConfirm);
+                btnNo.removeEventListener('click', onCancel);
+                btnClose.removeEventListener('click', onCancel);
+                overlay.removeEventListener('click', onOverlayClick);
+                document.removeEventListener('keydown', onKeydown);
+                if (previousFocus && previousFocus.focus) previousFocus.focus();
+            }
+            function onConfirm() { cleanup(); resolve(); }
+            function onCancel() { cleanup(); reject(); }
+            function onOverlayClick(e) { if (e.target === overlay) onCancel(); }
+            function onKeydown(e) { if (e.key === 'Escape') onCancel(); }
+
+            msgEl.textContent = message;
+            btnYes.addEventListener('click', onConfirm);
+            btnNo.addEventListener('click', onCancel);
+            btnClose.addEventListener('click', onCancel);
+            overlay.addEventListener('click', onOverlayClick);
+            document.addEventListener('keydown', onKeydown);
+
+            overlay.removeAttribute('hidden');
+            setTimeout(function () { btnYes.focus(); }, 50);
         });
     }
 
@@ -1427,14 +1470,15 @@
 
     function deletePreset(token) {
         var confirmMsg = state.lang === 'zh' ? '确定要删除此预置位吗？' : 'Are you sure you want to delete this preset?';
-        if (!window.confirm(confirmMsg)) return;
-        api('DELETE', '/api/ptz/preset/' + encodeURIComponent(token))
-            .then(loadPresets)
-            .catch(function (err) {
-                if (err.status !== 401) {
-                    showToast('toast.presetDelete', { err: err.message }, { kind: 'error' });
-                }
-            });
+        showConfirmModal(confirmMsg).then(function () {
+            api('DELETE', '/api/ptz/preset/' + encodeURIComponent(token))
+                .then(loadPresets)
+                .catch(function (err) {
+                    if (err.status !== 401) {
+                        showToast('toast.presetDelete', { err: err.message }, { kind: 'error' });
+                    }
+                });
+        }).catch(function () { /* cancelled — do nothing */ });
     }
 
     function initPresetControls() {
@@ -1601,6 +1645,7 @@
         initPresetControls();
         initLogout();
 
+		fetchVersion();
         loadConfig();
         initSnapshot();
         initLiveVideo();
@@ -1621,6 +1666,19 @@
                 state.metaTimer = null;
             }
             closeWS();
+        });
+    }
+
+    function fetchVersion() {
+        var el = document.getElementById('version-display');
+        if (!el) return;
+        fetch('/api/version').then(function (r) {
+            if (!r.ok) throw new Error('version fetch failed');
+            return r.json();
+        }).then(function (data) {
+            el.textContent = data.version || '--';
+        }).catch(function () {
+            el.textContent = '--';
         });
     }
 
@@ -1648,13 +1706,16 @@
                     clearToken();
                     setAuth(false);
                 }
+                hideLoading();
             }).catch(function () {
                 /* Network error — assume still logged in, show app */
                 setAuth(true);
                 bootApp();
+                hideLoading();
             });
         } else {
             setAuth(false);
+            hideLoading();
         }
     }
 

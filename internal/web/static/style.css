@@ -1288,6 +1288,40 @@ animation: fadeIn var(--t) var(--ease);
 }
 .modal-overlay[hidden] { display: none; }
 
+/* ---------- Loading Overlay ---------- */
+.loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    transition: opacity var(--t) var(--ease);
+}
+.loading-overlay[hidden] { display: none; }
+.loading-overlay.is-hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+.confirm-message {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text);
+    margin: 0;
+}
+
+
 .modal {
     background: var(--card);
     border: 1px solid var(--border);
