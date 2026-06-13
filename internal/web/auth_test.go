@@ -527,4 +527,31 @@ func TestAuthMiddleware_QueryTokenDeprecationWarning(t *testing.T) {
 	if h := rr.Header().Get("Deprecation-Warning"); h == "" {
 		t.Error("expected Deprecation-Warning header for query token")
 	}
+
+}
+func TestCredentialStrippedFromURL(t *testing.T) {
+	handler := securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	tests := []struct{ name, path string }{
+		{"password in query", "/?password=secret"},
+		{"username+password", "/?username=admin&password=admin123"},
+		{"with other params", "/?password=secret&page=1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.path, nil)
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusFound {
+				t.Errorf("expected 302 redirect, got %d", rr.Code)
+			}
+			loc := rr.Header().Get("Location")
+			if strings.Contains(loc, "password=") || strings.Contains(loc, "username=") {
+				t.Errorf("redirect location still contains credentials: %s", loc)
+			}
+		})
+	}
 }

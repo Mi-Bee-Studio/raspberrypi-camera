@@ -234,6 +234,19 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 // Content-Security-Policy is only applied to HTML page routes, not API/media endpoints.
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Strip sensitive credentials from URL query parameters.
+		// Prevents credential leakage via browser history, server logs, and Referer headers.
+		if q := r.URL.Query(); q.Has("password") || q.Has("username") {
+			q.Del("username")
+			q.Del("password")
+			clean := r.URL.Path
+			if enc := q.Encode(); enc != "" {
+				clean += "?" + enc
+			}
+			http.Redirect(w, r, clean, http.StatusFound)
+			return
+		}
+
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -243,15 +256,15 @@ func securityHeaders(next http.Handler) http.Handler {
 		if path == "/" || strings.HasPrefix(path, "/static/") {
 			w.Header().Set("Content-Security-Policy",
 				"default-src 'none'; "+
-				"script-src 'self'; "+
-				"style-src 'self' 'unsafe-inline'; "+
-				"img-src 'self' data: blob:; "+
-				"font-src 'self'; "+
-				"connect-src 'self' ws: wss:; "+
-				"media-src 'self' blob:; "+
-				"base-uri 'self'; "+
-				"form-action 'none'; "+
-				"frame-ancestors 'none'")
+					"script-src 'self'; "+
+					"style-src 'self' 'unsafe-inline'; "+
+					"img-src 'self' data: blob:; "+
+					"font-src 'self'; "+
+					"connect-src 'self' ws: wss:; "+
+					"media-src 'self' blob:; "+
+					"base-uri 'self'; "+
+					"form-action 'none'; "+
+					"frame-ancestors 'none'")
 		}
 
 		next.ServeHTTP(w, r)
