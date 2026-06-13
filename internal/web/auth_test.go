@@ -10,9 +10,10 @@ import (
 	"testing"
 )
 
-// newTestServer creates a Server with a fresh SessionStore for testing.
 func newTestServer(user, pass string) *Server {
 	return &Server{
+		username: user,
+		password: pass,
 		sessions: NewSessionStore(user, pass),
 		logger:   log.New(io.Discard, "", 0),
 		loginLimiter: &loginRateLimiter{attempts: make(map[string]*rateLimitEntry)},
@@ -205,6 +206,32 @@ func TestHandleLogin_HTTPEmptyFields(t *testing.T) {
 	}
 }
 
+func TestHandleLogin_HTTPEmptyStoredPassword(t *testing.T) {
+	// When no password is configured, login should be rejected with a specific message.
+	s := newTestServer("admin", "")
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"empty credentials", `{"username":"admin","password":""}`},
+		{"non-empty password", `{"username":"admin","password":"anything"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("POST", "/api/login", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			s.handleLogin(rr, req)
+			if rr.Code != http.StatusUnauthorized {
+				t.Errorf("expected 401, got %d", rr.Code)
+			}
+			if !strings.Contains(rr.Body.String(), "Password cannot be empty") {
+				t.Errorf("expected message about empty password, got: %s", rr.Body.String())
+			}
+		})
+	}
+}
+
 func TestHandleLogin_HTTPInvalidBody(t *testing.T) {
 	s := newTestServer("admin", "admin123")
 	req := httptest.NewRequest("POST", "/api/login", strings.NewReader("not json"))
@@ -239,26 +266,46 @@ func TestExtractToken_Priorities(t *testing.T) {
 	headerToken := "header-token"
 	queryToken := "query-token"
 
+	// Both header and query param: header wins, not from query
 	req := httptest.NewRequest("GET", "/ws?token="+queryToken, nil)
 	req.Header.Set("Authorization", "Bearer "+headerToken)
-	if got := extractToken(req); got != headerToken {
-		t.Errorf("expected header token to win, got %q", got)
+	tok, fromQuery := extractToken(req)
+	if tok != headerToken {
+		t.Errorf("expected header token to win, got %q", tok)
+	}
+	if fromQuery {
+		t.Error("expected fromQuery=false when header wins over query")
 	}
 
+	// Only query param
 	req = httptest.NewRequest("GET", "/ws?token="+queryToken, nil)
-	if got := extractToken(req); got != queryToken {
-		t.Errorf("expected query token, got %q", got)
+	tok, fromQuery = extractToken(req)
+	if tok != queryToken {
+		t.Errorf("expected query token, got %q", tok)
+	}
+	if !fromQuery {
+		t.Error("expected fromQuery=true when token is from query param")
 	}
 
+	// Only header
 	req = httptest.NewRequest("GET", "/ws", nil)
 	req.Header.Set("Authorization", "Bearer "+headerToken)
-	if got := extractToken(req); got != headerToken {
-		t.Errorf("expected header token, got %q", got)
+	tok, fromQuery = extractToken(req)
+	if tok != headerToken {
+		t.Errorf("expected header token, got %q", tok)
+	}
+	if fromQuery {
+		t.Error("expected fromQuery=false when token is from header")
 	}
 
+	// No token at all
 	req = httptest.NewRequest("GET", "/ws", nil)
-	if got := extractToken(req); got != "" {
-		t.Errorf("expected empty token, got %q", got)
+	tok, fromQuery = extractToken(req)
+	if tok != "" {
+		t.Errorf("expected empty token, got %q", tok)
+	}
+	if fromQuery {
+		t.Error("expected fromQuery=false when no token present")
 	}
 }
 
@@ -438,5 +485,46 @@ func TestSecurityHeaders(t *testing.T) {
 				t.Errorf("unexpected CSP header for path %q: %s", tt.path, csp)
 			}
 		})
+	}
+}
+
+func TestAuthMiddleware_BearerHeaderNoDeprecationWarning(t *testing.T) {
+	s := newTestServer("admin", "admin123")
+	token, _, _ := s.sessions.Login("admin", "admin123")
+
+	handler := s.authRequired(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest("GET", "/api/test", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	handler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	if h := rr.Header().Get("Deprecation-Warning"); h != "" {
+		t.Errorf("expected no Deprecation-Warning for Bearer header token, got %q", h)
+	}
+}
+
+func TestAuthMiddleware_QueryTokenDeprecationWarning(t *testing.T) {
+	s := newTestServer("admin", "admin123")
+	token, _, _ := s.sessions.Login("admin", "admin123")
+
+	handler := s.authRequired(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest("GET", "/api/test?token="+token, nil)
+	rr := httptest.NewRecorder()
+	handler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 (backward compatible), got %d", rr.Code)
+	}
+	if h := rr.Header().Get("Deprecation-Warning"); h == "" {
+		t.Error("expected Deprecation-Warning header for query token")
 	}
 }

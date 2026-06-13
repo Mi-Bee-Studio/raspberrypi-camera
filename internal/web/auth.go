@@ -5,8 +5,9 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
-	"net"
 	"errors"
+	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -56,6 +57,9 @@ type SessionStore struct {
 // NewSessionStore creates a new session store with the given credentials.
 // Tokens are issued via Login and validated via Validate.
 func NewSessionStore(username, password string) *SessionStore {
+	if password == "" {
+		log.Printf("WARNING: ONVIF password is empty. Set onvif.password in config or MIBEE_EYE_ONVIF_PASSWORD env var")
+	}
 	s := &SessionStore{
 		sessions: make(map[string]session),
 		username: username,
@@ -221,15 +225,19 @@ func extractIP(r *http.Request) string {
 }
 
 
-// extractToken returns the bearer token from the request.
+// extractToken returns the bearer token from the request and whether it came from query param.
 // It checks (in order): Authorization: Bearer header, ?token= query string.
-func extractToken(r *http.Request) string {
-	if auth := r.Header.Get("Authorization"); auth != "" {
+func extractToken(r *http.Request) (string, bool) {
+	auth := r.Header.Get("Authorization")
+	if auth != "" {
 		if strings.HasPrefix(auth, "Bearer ") {
-			return strings.TrimPrefix(auth, "Bearer ")
+			return strings.TrimPrefix(auth, "Bearer "), false
 		}
 	}
-	return r.URL.Query().Get("token")
+	if token := r.URL.Query().Get("token"); token != "" {
+		return token, true
+	}
+	return "", false
 }
 
 // authMiddleware wraps the entire mux. Routes that don't require auth
@@ -245,7 +253,11 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 // Returns 401 JSON on missing/invalid token (no more browser Basic Auth dialog).
 func (s *Server) authRequired(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		token := extractToken(r)
+		token, fromQuery := extractToken(r)
+		if fromQuery {
+			s.logger.Printf("web: DEPRECATED: token via query parameter (use Authorization: Bearer header instead)")
+			w.Header().Set("Deprecation-Warning", "Token in URL query parameter is deprecated. Use Authorization: Bearer header instead.")
+		}
 		if _, err := s.sessions.Validate(token); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
@@ -266,6 +278,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+
+	// If no password is configured, reject all login attempts.
+	if s.password == "" {
+		writeError(w, http.StatusUnauthorized, "Password cannot be empty. Set onvif.password in config")
+		return
+	}
+
 	if req.Username == "" || req.Password == "" {
 		writeError(w, http.StatusBadRequest, "username and password are required")
 		return
@@ -298,7 +317,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 // handleLogout invalidates the caller's bearer token.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	token := extractToken(r)
+	token, fromQuery := extractToken(r)
+	if fromQuery {
+		s.logger.Printf("web: DEPRECATED: token via query parameter (use Authorization: Bearer header instead)")
+		w.Header().Set("Deprecation-Warning", "Token in URL query parameter is deprecated. Use Authorization: Bearer header instead.")
+	}
 	if username, err := s.sessions.Validate(token); err == nil {
 		s.sessions.Logout(token)
 		s.logger.Printf("web: logout OK for user %q (active sessions: %d)", username, s.sessions.Count())

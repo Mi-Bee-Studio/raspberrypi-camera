@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 
@@ -145,6 +146,10 @@ func Load(path string) (*Config, error) {
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
+	}
+
+	if cfg.ONVIF.Password == "" {
+		log.Printf("WARNING: ONVIF password is empty. Set onvif.password in config or MIBEE_EYE_ONVIF_PASSWORD env var")
 	}
 
 	return cfg, nil

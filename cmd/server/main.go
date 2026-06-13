@@ -109,6 +109,10 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
+	if cfg.ONVIF.Password == "" {
+		log.Printf("WARNING: ONVIF password is empty. Set onvif.password in config or MIBEE_EYE_ONVIF_PASSWORD env var")
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 

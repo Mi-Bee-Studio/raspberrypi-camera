@@ -450,3 +450,23 @@ func TestValidateInvalidCodec(t *testing.T) {
 		t.Errorf("error should mention 'codec', got: %v", err)
 	}
 }
+
+func TestLoadEmptyPasswordWarning(t *testing.T) {
+	// Default config has empty ONVIF password; Load should succeed and log a warning.
+	cfgYAML := `
+camera: {}
+rtsp: {}
+onvif: {}
+rtmp: {}
+device: {}
+logging: {}
+`
+	path := writeTempYAML(t, cfgYAML)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed with empty password: %v", err)
+	}
+	if cfg.ONVIF.Password != "" {
+		t.Errorf("expected empty password, got %q", cfg.ONVIF.Password)
+	}
+}
