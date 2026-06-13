@@ -1,3 +1,4 @@
+
 // Package rtmp manages FFmpeg subprocess for RTSP→RTMP stream push.
 package rtmp
 
@@ -18,11 +19,11 @@ const (
 	StatusError        Status = "error"
 )
 
-// maxRestarts is the maximum number of automatic restart attempts.
-const maxRestarts = 3
-
-// restartDelay is the delay between restart attempts.
+const maxRestarts = 5
+const restartWindow = 1 * time.Minute
+const cooldownDuration = 5 * time.Minute
 const restartDelay = 5 * time.Second
+
 
 // Config holds RTMP push configuration.
 type Config struct {
@@ -41,7 +42,9 @@ type Push struct {
 	rtspURL   string // Local RTSP URL to pull from
 	enabled   bool
 	ffmpegBin string // Path to ffmpeg binary (default: "ffmpeg")
-	restarts  int
+	restartCount      int
+	restartWindowStart time.Time
+	cooldownUntil     time.Time
 }
 
 // New creates a new RTMP push manager.
@@ -57,13 +60,17 @@ func New(cfg Config) *Push {
 
 // Start begins pushing RTSP to RTMP via FFmpeg subprocess.
 // The FFmpeg command: ffmpeg -rtsp_transport tcp -i {rtspURL} -c copy -f flv {rtmpURL}
-// On crash, auto-restarts up to maxRestarts times with restartDelay between attempts.
+// On crash, auto-restarts up to maxRestarts times per restartWindow,
+// then enters cooldownDuration cooldown before retrying.
 func (p *Push) Start(ctx context.Context) error {
 	p.mu.Lock()
 	if !p.enabled {
 		p.mu.Unlock()
 		return nil
 	}
+	p.restartCount = 0
+	p.restartWindowStart = time.Time{}
+	p.cooldownUntil = time.Time{}
 	p.mu.Unlock()
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -94,7 +101,9 @@ func (p *Push) Stop() error {
 
 	p.mu.Lock()
 	p.status = StatusDisconnected
-	p.restarts = 0
+	p.restartCount = 0
+	p.cooldownUntil = time.Time{}
+	p.restartWindowStart = time.Time{}
 	p.mu.Unlock()
 
 	return nil
@@ -135,20 +144,63 @@ func (p *Push) buildCommand() *exec.Cmd {
 
 func (p *Push) run(ctx context.Context) {
 	for {
-		p.mu.Lock()
-		if p.restarts >= maxRestarts {
-			p.setStatus(StatusError)
-			p.mu.Unlock()
-			return
-		}
-		p.restarts++
-		p.mu.Unlock()
-
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
+
+		p.mu.Lock()
+
+		// If in cooldown, wait until it ends, then reset
+		if !p.cooldownUntil.IsZero() {
+			if time.Now().Before(p.cooldownUntil) {
+				remaining := time.Until(p.cooldownUntil)
+				p.mu.Unlock()
+				p.setStatus(StatusError)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(remaining):
+				}
+				p.mu.Lock()
+			}
+			p.restartCount = 0
+			p.cooldownUntil = time.Time{}
+			p.restartWindowStart = time.Time{}
+		}
+
+		// Reset count if restart window has expired
+		if !p.restartWindowStart.IsZero() && time.Since(p.restartWindowStart) > restartWindow {
+			p.restartCount = 0
+			p.restartWindowStart = time.Now()
+		}
+
+		// Initialize window start on first restart
+		if p.restartWindowStart.IsZero() {
+			p.restartWindowStart = time.Now()
+		}
+
+		// Max restarts reached in this window — enter cooldown
+		if p.restartCount >= maxRestarts {
+			p.cooldownUntil = time.Now().Add(cooldownDuration)
+			p.mu.Unlock()
+			p.setStatus(StatusError)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(cooldownDuration):
+			}
+			p.mu.Lock()
+			p.restartCount = 0
+			p.cooldownUntil = time.Time{}
+			p.restartWindowStart = time.Time{}
+			p.mu.Unlock()
+			continue
+		}
+
+		p.restartCount++
+		p.mu.Unlock()
 
 		p.setStatus(StatusConnecting)
 
@@ -171,7 +223,6 @@ func (p *Push) run(ctx context.Context) {
 
 		p.setStatus(StatusConnected)
 
-		// Wait for FFmpeg to exit
 		err = cmd.Wait()
 
 		p.mu.Lock()
@@ -195,6 +246,14 @@ func (p *Push) run(ctx context.Context) {
 			continue
 		}
 	}
+}
+
+// CooldownUntil returns the cooldown end time (zero if not in cooldown).
+// Exported for testing.
+func (p *Push) CooldownUntil() time.Time {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.cooldownUntil
 }
 
 func (p *Push) setStatus(s Status) {
@@ -221,15 +280,13 @@ func (p *Push) buildCommandWithBin(bin string) *exec.Cmd {
 func (p *Push) RestartCount() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.restarts
+	return p.restartCount
 }
 
 // SetStatus directly sets the status. Used only in tests.
 func (p *Push) SetStatus(s Status) {
 	p.setStatus(s)
 }
-
-// SetCancel sets the cancel function. Used only in tests.
 func (p *Push) SetCancel(f context.CancelFunc) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

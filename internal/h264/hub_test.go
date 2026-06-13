@@ -201,3 +201,48 @@ func TestUnsubscribeUnknownID(t *testing.T) {
 	// Unsubscribe an ID that was never subscribed — no panic.
 	hub.Unsubscribe("nonexistent")
 }
+
+func TestSubscriberCleanup(t *testing.T) {
+	hub := NewAUHub()
+	const n = 100
+	cancels := make([]context.CancelFunc, n)
+
+	for i := 0; i < n; i++ {
+		var ctx context.Context
+		ctx, cancels[i] = context.WithCancel(context.Background())
+		hub.Subscribe(ctx)
+	}
+
+	if count := hub.SubscriberCount(); count != n {
+		t.Fatalf("expected %d subscribers, got %d", n, count)
+	}
+
+	// Cancel all contexts.
+	for i := 0; i < n; i++ {
+		cancels[i]()
+	}
+
+	// Wait for goroutines to clean up.
+	time.Sleep(50 * time.Millisecond)
+
+	if count := hub.SubscriberCount(); count != 0 {
+		t.Errorf("expected 0 subscribers after cancel, got %d", count)
+	}
+}
+
+func TestSubscribeLeak100Cycles(t *testing.T) {
+	hub := NewAUHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	for i := 0; i < 100; i++ {
+		sub := hub.Subscribe(ctx)
+		if count := hub.SubscriberCount(); count != 1 {
+			t.Fatalf("cycle %d: expected 1 subscriber, got %d", i, count)
+		}
+		hub.Unsubscribe(sub.ID)
+		if count := hub.SubscriberCount(); count != 0 {
+			t.Fatalf("cycle %d: expected 0 subscribers after unsubscribe, got %d", i, count)
+		}
+	}
+}

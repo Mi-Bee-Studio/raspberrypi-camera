@@ -89,6 +89,9 @@ type RPiCamera struct {
 	stopped bool
 	wg      sync.WaitGroup // tracks run() goroutine
 
+	// shutdown coordination
+	cancel context.CancelFunc
+
 	// binary path
 	binPath string
 }
@@ -159,7 +162,8 @@ func (c *RPiCamera) Start(ctx context.Context) error {
 		return fmt.Errorf("mtxrpicam binary not found at %s: %w", c.binPath, err)
 	}
 
-	c.ctx = ctx
+	// Wrap context with cancel so Stop() can wake up run() from backoff selects
+	c.ctx, c.cancel = context.WithCancel(ctx)
 	c.started = true
 	c.framesCh = make(chan Frame, 30) // buffer ~2 seconds at 15fps
 
@@ -311,6 +315,9 @@ func (c *RPiCamera) Stop() error {
 		// Signal run() to stop accepting restarts
 		c.mu.Lock()
 		c.stopped = true
+		if c.cancel != nil {
+			c.cancel()
+		}
 		c.mu.Unlock()
 
 		// Kill subprocess and close pipes (causes readLoop to exit)
@@ -324,11 +331,27 @@ func (c *RPiCamera) Stop() error {
 		}
 		c.mu.Unlock()
 
-		// Wait for run() goroutine to finish
-		c.wg.Wait()
+		// Wait for run() goroutine to finish (with timeout)
+		c.waitForShutdown()
 	})
 
 	return nil
+}
+
+// waitForShutdown waits for the run() goroutine with a timeout.
+func (c *RPiCamera) waitForShutdown() {
+	done := make(chan struct{})
+	go func() {
+		c.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// run() exited normally
+	case <-time.After(10 * time.Second):
+		log.Printf("camera: Stop timed out waiting for run() goroutine after 10s")
+	}
 }
 
 // cleanupSubprocess cleans up the mtxrpicam subprocess and pipes.

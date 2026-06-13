@@ -732,3 +732,139 @@ func TestSerializeQuit(t *testing.T) {
 		t.Errorf("expected 'e', got %v", quit)
 	}
 }
+
+// --- Goroutine Cleanup Test ---
+
+// TestStopCleanup verifies Stop() cleanly terminates the run() goroutine
+// by killing the subprocess, closing the pipe (unblocking readLoop),
+// and returning promptly without leaking goroutines.
+func TestStopCleanup(t *testing.T) {
+	// Build a mock subprocess that streams frames until killed/pipe-closed
+	tmpDir := t.TempDir()
+	mockBin := filepath.Join(tmpDir, "mock-mtxrpicam")
+
+	mockSrc := filepath.Join(tmpDir, "mock_main.go")
+	mockCode := `package main
+
+import (
+	"encoding/binary"
+	"os"
+	"strconv"
+	"syscall"
+	"time"
+)
+
+func writeFrame(fd int, data []byte) error {
+	var buf [4]byte
+	binary.LittleEndian.PutUint32(buf[:], uint32(len(data)))
+	if _, err := syscall.Write(fd, buf[:]); err != nil {
+		return err
+	}
+	_, err := syscall.Write(fd, data)
+	return err
+}
+
+func main() {
+	confFD, _ := strconv.Atoi(os.Getenv("PIPE_CONF_FD"))
+	videoFD, _ := strconv.Atoi(os.Getenv("PIPE_VIDEO_FD"))
+
+	// Read config command (consume it)
+	var hdr [4]byte
+	if _, err := syscall.Read(confFD, hdr[:]); err != nil {
+		return
+	}
+	sz := binary.LittleEndian.Uint32(hdr[:])
+	buf := make([]byte, sz)
+	if _, err := syscall.Read(confFD, buf); err != nil {
+		return
+	}
+	syscall.Close(confFD)
+
+	// Send ready signal
+	writeFrame(videoFD, []byte("r"))
+
+	// Stream frames until pipe breaks
+	counter := 0
+	for {
+		counter++
+		var dtsBuf [8]byte
+		binary.LittleEndian.PutUint64(dtsBuf[:], uint64(counter * 66666))
+
+		var nalu []byte
+		if counter%15 == 0 {
+			nalu = []byte{0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84, 0x00} // IDR
+		} else {
+			nalu = []byte{0x00, 0x00, 0x00, 0x01, 0x41, 0x9a, 0x20, 0x08} // P-frame
+		}
+
+		payload := make([]byte, 1+8+len(nalu))
+		payload[0] = 'd'
+		copy(payload[1:9], dtsBuf[:])
+		copy(payload[9:], nalu)
+
+		if err := writeFrame(videoFD, payload); err != nil {
+			break // pipe closed
+		}
+		time.Sleep(66 * time.Millisecond)
+	}
+	syscall.Close(videoFD)
+}
+`
+	if err := os.WriteFile(mockSrc, []byte(mockCode), 0644); err != nil {
+		t.Fatalf("write mock source: %v", err)
+	}
+
+	// Build mock binary
+	buildCmd := exec.Command("go", "build", "-o", mockBin, mockSrc)
+	buildCmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH=amd64")
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("build mock binary: %v\n%s", err, out)
+	}
+
+	c := NewRPiCamera(
+		WithBinPath(mockBin),
+		WithParams(Params{
+			Width:  1280,
+			Height: 720,
+			FPS:    15,
+			Codec:  "hardwareH264",
+		}),
+	)
+
+	ctx := context.Background()
+	if err := c.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	// Read a few frames to confirm camera is actively streaming
+	framesCh := c.Frames()
+	for i := 0; i < 3; i++ {
+		select {
+		case _, ok := <-framesCh:
+			if !ok {
+				t.Fatal("frames channel closed unexpectedly")
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for frames")
+		}
+	}
+
+	// Stop and measure completion time
+	start := time.Now()
+	stopDone := make(chan struct{})
+	go func() {
+		c.Stop()
+		close(stopDone)
+	}()
+
+	select {
+	case <-stopDone:
+		elapsed := time.Since(start)
+		t.Logf("Stop() completed in %v", elapsed)
+		if elapsed > 5*time.Second {
+			t.Errorf("Stop() took too long: %v (should be < 5s)", elapsed)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Stop() did not complete within 10 seconds - possible goroutine leak")
+	}
+}

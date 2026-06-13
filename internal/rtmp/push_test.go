@@ -292,7 +292,7 @@ func TestRestartCountIncrement(t *testing.T) {
 
 	// Simulate restart increments via internal method
 	p.mu.Lock()
-	p.restarts = 1
+	p.restartCount = 1
 	p.mu.Unlock()
 
 	if p.RestartCount() != 1 {
@@ -335,6 +335,54 @@ exit 1
 	// Should have attempted at least 1 restart
 	if p.RestartCount() == 0 {
 		t.Error("expected at least 1 restart attempt")
+	}
+}
+
+func TestMaxRestarts(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockBin := filepath.Join(tmpDir, "ffmpeg")
+	script := `#!/bin/sh
+exit 1
+`
+	if err := os.WriteFile(mockBin, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{
+		Enabled: true,
+		URL:     "rtmp://push-server/app/stream",
+		RTSPURL: "rtsp://localhost:8554/stream",
+	}
+	p := New(cfg)
+	p.ffmpegBin = mockBin
+
+	// Pre-set restart count to just below the limit so one more attempt triggers cooldown
+	p.mu.Lock()
+	p.restartCount = maxRestarts - 1
+	p.restartWindowStart = time.Now()
+	p.mu.Unlock()
+
+	// Use enough time for one restart cycle: mock exits instantly,
+	// then restartDelay (5s) before the next loop iteration checks maxRestarts.
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+
+	go p.run(ctx)
+
+	<-ctx.Done()
+
+	p.mu.RLock()
+	count := p.restartCount
+	cooldownSet := !p.cooldownUntil.IsZero()
+	p.mu.RUnlock()
+
+	t.Logf("Restart count: %d, cooldown set: %v", count, cooldownSet)
+
+	if count < maxRestarts {
+		t.Errorf("expected restart count >= %d, got %d", maxRestarts, count)
+	}
+	if !cooldownSet {
+		t.Error("expected cooldown to be set after reaching max restarts")
 	}
 }
 

@@ -65,6 +65,7 @@ type Server struct {
 	ready     chan struct{}
 
 	stopOnce sync.Once
+	wg       sync.WaitGroup // tracks runLoop goroutine
 }
 
 // New creates a new HLS server. Call Start to begin segmenting.
@@ -119,7 +120,11 @@ func (s *Server) Start(ctx context.Context) error {
 	s.ready = make(chan struct{})
 	s.mu.Unlock()
 
-	go s.runLoop(runCtx)
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		s.runLoop(runCtx)
+	}()
 
 	// Wait for first segment or ctx cancel.
 	select {
@@ -135,16 +140,28 @@ func (s *Server) Start(ctx context.Context) error {
 }
 
 // Stop terminates the ffmpeg subprocess if running.
+// It sends SIGTERM to the process group first, waits up to 5 seconds,
+// then escalates to SIGKILL if the process is still alive.
 func (s *Server) Stop() error {
 	var err error
 	s.stopOnce.Do(func() {
 		s.mu.Lock()
 		cancel := s.cancel
+		cmd := s.cmd
 		s.running = false
 		s.mu.Unlock()
+
 		if cancel != nil {
 			cancel()
 		}
+
+		// Kill process group: SIGTERM, wait up to 5s, then SIGKILL.
+		if cmd != nil && cmd.Process != nil {
+			killProcessGroup(cmd.Process.Pid)
+		}
+
+		// Wait for runLoop goroutine to finish (which calls cmd.Wait()).
+		s.wg.Wait()
 	})
 	return err
 }
@@ -318,6 +335,7 @@ func clearDir(dir string) error {
 }
 
 // logStderr copies ffmpeg's stderr to our logger, line by line.
+// Returns when the reader returns an error (typically io.EOF on pipe close).
 func logStderr(logger *log.Logger, r interface{ Read(p []byte) (int, error) }) {
 	buf := make([]byte, 4096)
 	for {
@@ -332,4 +350,27 @@ func logStderr(logger *log.Logger, r interface{ Read(p []byte) (int, error) }) {
 			return
 		}
 	}
+}
+
+// killProcessGroup sends SIGTERM to the process group, waits up to 5s,
+// then escalates to SIGKILL if the process is still alive.
+func killProcessGroup(pid int) {
+	pgid := -pid // negative PID = process group
+
+	// Graceful shutdown first.
+	_ = syscall.Kill(pgid, syscall.SIGTERM)
+
+	// Poll for process exit up to 5 seconds.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := syscall.Kill(pgid, 0); err != nil {
+			// Process group is gone.
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Force kill with SIGKILL.
+	_ = syscall.Kill(pgid, syscall.SIGKILL)
+	time.Sleep(50 * time.Millisecond) // brief wait for SIGKILL to take effect
 }

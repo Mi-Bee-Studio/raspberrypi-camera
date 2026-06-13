@@ -67,24 +67,24 @@ func (h *AUHub) Subscribe(ctx context.Context) *Subscriber {
 	h.mu.Unlock()
 
 	go func() {
+		defer h.Unsubscribe(id)
 		<-ctx.Done()
-		h.Unsubscribe(id)
 	}()
 
 	return sub
 }
 
-// Unsubscribe removes a subscriber and closes its channel.
 func (h *AUHub) Unsubscribe(id string) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
-
 	sub, ok := h.subscribers[id]
 	if !ok {
+		h.mu.Unlock()
 		return
 	}
 	delete(h.subscribers, id)
 	close(sub.Channel)
+	h.mu.Unlock()
+	sub.cancel()
 }
 
 // SubscriberCount returns the current number of active subscribers.

@@ -238,6 +238,7 @@
         username: null,
         currentTab: 'server',
         snapshotTimer: null,
+        metaTimer: null,
         ws: null,
         wsReconnectTimer: null,
         snapshotLoadTime: 0,
@@ -641,12 +642,28 @@
         if (tab === 'camera') {
             if (!state.imagingRendered) loadImaging();
             if (!state.ptzRendered) loadPTZ();
+            /* Restart snapshot/meta timers when entering camera tab */
+            if (!state.snapshotTimer) {
+                refreshSnapshot();
+                state.snapshotTimer = setInterval(refreshSnapshot, SNAPSHOT_INTERVAL);
+                state.metaTimer = setInterval(updateSnapshotMeta, 1000);
+            }
         }
-        /* Stop HLS playback when leaving camera tab to save resources */
-        if (tab !== 'camera' && state.hlsInstance) {
-            try { state.hlsInstance.destroy(); } catch (e) {}
-            state.hlsInstance = null;
-            state.videoPlaying = false;
+        /* Stop HLS playback and snapshot timers when leaving camera tab */
+        if (tab !== 'camera') {
+            if (state.hlsInstance) {
+                try { state.hlsInstance.destroy(); } catch (e) {}
+                state.hlsInstance = null;
+                state.videoPlaying = false;
+            }
+            if (state.snapshotTimer) {
+                clearInterval(state.snapshotTimer);
+                state.snapshotTimer = null;
+            }
+            if (state.metaTimer) {
+                clearInterval(state.metaTimer);
+                state.metaTimer = null;
+            }
         }
     }
 
@@ -913,7 +930,7 @@
         refreshSnapshot();
         if (!state.snapshotTimer) {
             state.snapshotTimer = setInterval(refreshSnapshot, SNAPSHOT_INTERVAL);
-            setInterval(updateSnapshotMeta, 1000);
+            state.metaTimer = setInterval(updateSnapshotMeta, 1000);
         }
     }
 
@@ -1456,7 +1473,15 @@
             state.ws = null;
         }
         clearTimeout(state.wsReconnectTimer);
-    }
+        /* Clear camera timers on disconnect */
+        if (state.snapshotTimer) {
+            clearInterval(state.snapshotTimer);
+            state.snapshotTimer = null;
+        }
+        if (state.metaTimer) {
+            clearInterval(state.metaTimer);
+            state.metaTimer = null;
+        }
 
     function scheduleReconnect() {
         clearTimeout(state.wsReconnectTimer);
@@ -1584,6 +1609,19 @@
 
         applyI18n();
         connectWS();
+
+        /* Clean up all timers on page close to prevent memory leaks */
+        window.addEventListener('beforeunload', function () {
+            if (state.snapshotTimer) {
+                clearInterval(state.snapshotTimer);
+                state.snapshotTimer = null;
+            }
+            if (state.metaTimer) {
+                clearInterval(state.metaTimer);
+                state.metaTimer = null;
+            }
+            closeWS();
+        });
     }
 
     function init() {
