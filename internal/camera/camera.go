@@ -262,6 +262,12 @@ func (c *RPiCamera) spawnSubprocess() error {
 	}
 
 	binDir := filepath.Dir(binPath)
+
+	// Resolve binDir to absolute path so LD_LIBRARY_PATH works
+	// even after cmd.Dir changes the subprocess working directory.
+	if absBinDir, err := filepath.Abs(binDir); err == nil {
+		binDir = absBinDir
+	}
 	env := []string{
 		"PIPE_CONF_FD=" + strconv.Itoa(confFds[0]),
 		"PIPE_VIDEO_FD=" + strconv.Itoa(videoFds[1]),
